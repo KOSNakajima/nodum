@@ -20,6 +20,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { vaultApi } from "@/lib/api/endpoints";
 import { EditorView } from "@codemirror/view";
 
+import { MobileEditToolbar } from "@/components/editor/mobile-edit-toolbar";
 import { ReadingView } from "@/components/editor/reading-view";
 import { BacklinksInDocument } from "./backlinks-in-document";
 import { NavArrows } from "./nav-arrows";
@@ -31,6 +32,7 @@ import { bookmarkApi, noteApi, searchApi } from "@/lib/api/endpoints";
 import type { Note } from "@/lib/api/types";
 import { currentActiveNote, setActiveNote, setNoteHover } from "@/lib/graph/hover-bus";
 import { useEditorSettings } from "@/lib/hooks/use-editor-settings";
+import { useCoarsePointer, useIsMobile } from "@/lib/hooks/use-is-mobile";
 import { resolveNewNoteFolder } from "@/lib/new-note-location";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { cn } from "@/lib/utils";
@@ -112,6 +114,10 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
   const setVersionsOpen = useWorkspaceStore((s) => s.setVersionsOpen);
   const editorSettings = useEditorSettings();
   const preview = usePagePreview();
+  const isMobile = useIsMobile();
+  // Hover previews have no hover to hang off on touch — a tap would fire the
+  // emulated mouseover and float a preview over the note you just opened.
+  const coarse = useCoarsePointer();
 
   const [title, setTitle] = useState(note.title);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -443,10 +449,13 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
     >
       {/* Three columns so the breadcrumb stays optically centred no matter how
           wide the button cluster gets. */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pt-1.5">
-        <div className="flex items-center justify-start">
+      {/* Phones: the top bar names the note and the bottom bar has back /
+          forward, so only the actions stay — at finger size. */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pt-1.5 max-md:flex max-md:justify-end max-md:gap-0 max-md:px-1 max-md:pt-0.5">
+        <div className="flex items-center justify-start max-md:hidden">
           <NavArrows paneIndex={paneIndex} />
         </div>
+        {!isMobile && (
         <NoteBreadcrumb
           vaultId={vaultId}
           note={note}
@@ -455,9 +464,27 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
             rename.mutate(next);
           }}
         />
+        )}
         <div className="flex items-center justify-end gap-0.5">
         <BookmarkButton vaultId={vaultId} noteId={note.id} />
         <ShareButton vaultId={vaultId} noteId={note.id} />
+        {isMobile ? (
+          // One toggle on a phone (Obsidian mobile's edit/read switch);
+          // source mode stays in the ⋯ menu.
+          <ModeButton
+            label={mode === "reading" ? "Edit" : "Read"}
+            active={false}
+            onClick={() => setMode(mode === "reading" ? "live" : "reading")}
+            icon={
+              mode === "reading" ? (
+                <Pencil className="size-[18px]" strokeWidth={1.75} />
+              ) : (
+                <BookOpen className="size-[18px]" strokeWidth={1.75} />
+              )
+            }
+          />
+        ) : (
+        <>
         <ModeButton
           label="Live preview"
           active={mode === "live"}
@@ -476,6 +503,8 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
           onClick={() => setMode("reading")}
           icon={<BookOpen className="size-3.5" strokeWidth={1.75} />}
         />
+        </>
+        )}
         <NoteMenu
           vaultId={vaultId}
           note={note}
@@ -495,12 +524,14 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
       </div>
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto"
-        {...preview.handlers}
+        data-editor-scroll
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+        {...(coarse ? {} : preview.handlers)}
         // Hovering a link points the open graph at the note it leads to (the
         // node breathes). Wraps the page-preview handler rather than replacing
         // it — the preview has its own "require ⌘" pref, this never should.
         onMouseOver={(e) => {
+          if (coarse) return;
           preview.handlers.onMouseOver(e);
           const el = (e.target as HTMLElement).closest?.("[data-wikilink-target]");
           const target = el?.getAttribute("data-wikilink-target");
@@ -527,6 +558,7 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
             ref={titleRef}
             value={title}
             aria-label="Note title"
+            data-keep-font
             onChange={(e) => setTitle(e.target.value)}
             onBlur={() => {
               const t = title.trim();
@@ -581,6 +613,7 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
         ) : (
           <PagePreview vaultId={vaultId} anchor={preview.anchor} />
         ))}
+      {isMobile && <MobileEditToolbar getView={() => editorViewRef.current} />}
       <VersionHistoryDialog
         vaultId={vaultId}
         noteId={note.id}
@@ -626,7 +659,7 @@ function ModeButton({
           aria-pressed={active}
           onClick={onClick}
           className={cn(
-            "flex size-6 items-center justify-center rounded transition-colors duration-150",
+            "flex size-6 items-center justify-center rounded transition-colors duration-150 max-md:size-10",
             active ? "bg-ob-active text-ob-text" : "text-ob-faint hover:bg-ob-hover hover:text-ob-text",
           )}
         >
@@ -662,7 +695,7 @@ function BookmarkButton({ vaultId, noteId }: { vaultId: string; noteId: string }
           aria-pressed={isBookmarked}
           onClick={() => toggle.mutate()}
           className={cn(
-            "flex size-6 items-center justify-center rounded transition-colors duration-150",
+            "flex size-6 items-center justify-center rounded transition-colors duration-150 max-md:size-10",
             isBookmarked ? "text-ob-accent" : "text-ob-faint hover:bg-ob-hover hover:text-ob-text",
           )}
         >

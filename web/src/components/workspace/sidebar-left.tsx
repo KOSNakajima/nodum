@@ -102,13 +102,16 @@ export function SidebarLeft({
         {pane === "bookmarks" && <BookmarksPane vaultId={vaultId} onOpenNote={onOpenNote} />}
       </div>
 
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
-        onPointerDown={onDragStart}
-        className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize hover:bg-ob-accent/40"
-      />
+      {/* A drawer has no edge to drag — and it would resize the desktop sidebar. */}
+      {!drawer && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onPointerDown={onDragStart}
+          className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize hover:bg-ob-accent/40"
+        />
+      )}
     </div>
   );
 }
@@ -129,7 +132,7 @@ function ImportDataButton() {
           aria-haspopup="dialog"
           data-testid="import-data-button"
           onClick={() => setImportOpen(true)}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ob-faint transition-colors duration-150 hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ob-faint max-md:size-10 transition-colors duration-150 hover:bg-ob-hover hover:text-ob-text"
         >
           <Import className="size-4" strokeWidth={1.75} />
         </button>
@@ -159,7 +162,7 @@ function PaneTab({
           aria-pressed={active}
           onClick={onClick}
           className={cn(
-            "flex size-7 items-center justify-center rounded-md transition-colors duration-150",
+            "flex size-7 items-center justify-center rounded-md transition-colors duration-150 max-md:size-10",
             active ? "bg-ob-active text-ob-text" : "text-ob-faint hover:bg-ob-hover hover:text-ob-text",
           )}
         >

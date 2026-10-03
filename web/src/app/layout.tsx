@@ -84,6 +84,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#06060b",
   colorScheme: "dark",
+  // Edge-to-edge on notched phones (insets are padded back in via
+  // env(safe-area-inset-*)), and the on-screen keyboard shrinks the layout
+  // instead of covering it, so the editor toolbar can sit on top of it.
+  viewportFit: "cover",
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

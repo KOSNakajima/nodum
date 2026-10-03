@@ -51,7 +51,7 @@ export function ShareButton({ vaultId, noteId }: { vaultId: string; noteId: stri
               type="button"
               aria-label="Share note"
               className={cn(
-                "flex size-6 items-center justify-center rounded transition-colors duration-150",
+                "flex size-6 items-center justify-center rounded transition-colors duration-150 max-md:size-10",
                 status?.published
                   ? "text-ob-accent"
                   : "text-ob-faint hover:bg-ob-hover hover:text-ob-text",
