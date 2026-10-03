@@ -6,6 +6,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { AiSettingsTab } from "./ai-settings-tab";
@@ -18,6 +19,7 @@ import { VaultsSection } from "./vaults-section";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -35,6 +37,7 @@ import {
   type EditorViewMode,
   type FontChoice,
 } from "@/lib/hooks/use-editor-settings";
+import { useIsMobile } from "@/lib/hooks/use-is-mobile";
 import { useVaultSettings } from "@/lib/hooks/use-vault-settings";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
@@ -59,6 +62,13 @@ const TABS = [
   "Collab",
 ] as const;
 type SettingsTab = (typeof TABS)[number];
+// Keyboard-only tabs make no sense on touch
+const MOBILE_TABS = TABS.filter((t) => t !== "Hotkeys");
+
+// Phones: inputs at 16px (iOS zooms anything smaller on focus), every control
+// ≥40px tall, and long emails/paths wrap instead of widening the sheet.
+const MOBILE_CONTENT =
+  "max-md:px-4 max-md:wrap-break-word max-md:[&_select]:min-h-10 max-md:[&_select]:max-w-full max-md:[&_select]:text-base max-md:[&_textarea]:text-base max-md:[&_input:not([type=checkbox],[type=range],[type=color])]:min-h-10 max-md:[&_input:not([type=checkbox],[type=range],[type=color])]:text-base max-md:[&_input[type=checkbox]]:size-5 max-md:[&_input[type=checkbox]]:shrink-0 max-md:[&_input[type=color]]:h-10 max-md:[&_button]:min-h-10 max-md:[&_button]:min-w-10 max-md:[&_a[data-slot=button]]:min-h-10";
 
 interface SettingsModalProps {
   vaultId: string;
@@ -75,12 +85,17 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
   // rather than synced by an effect — a click on any tab takes over from then
   // on, and closing the dialog forgets the choice.
   const requestedTab = useWorkspaceStore((s) => s.settingsTab);
-  const [pickedTab, setPickedTab] = useState<SettingsTab | null>(null);
-  const tab: SettingsTab =
-    pickedTab ??
-    ((TABS as readonly string[]).includes(requestedTab ?? "")
-      ? (requestedTab as SettingsTab)
-      : "General");
+  const isMobile = useIsMobile();
+  // "menu" = the phone's category list (Back pressed); desktop ignores it.
+  const [pickedTab, setPickedTab] = useState<SettingsTab | "menu" | null>(null);
+  const tabs: readonly SettingsTab[] = isMobile ? MOBILE_TABS : TABS;
+  const chosen = pickedTab ?? requestedTab;
+  const valid = (tabs as readonly string[]).includes(chosen ?? "")
+    ? (chosen as SettingsTab)
+    : null;
+  const tab: SettingsTab = valid ?? "General";
+  // Phone drill-down: null shows the category list, a tab shows its page
+  const mobilePage = isMobile ? valid : null;
   const setTab = setPickedTab;
   const [hotkeyQuery, setHotkeyQuery] = useState("");
   const editorSettings = useEditorSettings();
@@ -258,15 +273,63 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
         onOpenChange(next);
       }}
     >
-      <DialogContent className="gap-0 overflow-clip border-ob-border bg-ob-sidebar p-0 sm:max-w-[1040px]">
-        <DialogHeader className="border-b border-ob-border px-5 pt-4 pb-3">
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription className="sr-only">
-            Account and vault configuration.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        showCloseButton={!isMobile}
+        className="gap-0 overflow-clip border-ob-border bg-ob-sidebar p-0 sm:max-w-[1040px] max-md:inset-0 max-md:flex max-md:h-dvh max-md:w-full max-md:max-w-none! max-md:translate-0 max-md:flex-col max-md:rounded-none max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)]"
+      >
+        {isMobile ? (
+          <div className="flex min-h-12 shrink-0 items-center gap-1 border-b border-ob-border px-1">
+            {mobilePage ? (
+              <button
+                type="button"
+                aria-label="Back to settings"
+                onClick={() => setTab("menu")}
+                className="flex size-11 shrink-0 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+              >
+                <ChevronLeft className="size-5" />
+              </button>
+            ) : (
+              <span className="w-3 shrink-0" />
+            )}
+            <DialogTitle className="min-w-0 flex-1 truncate text-[17px]">
+              {mobilePage ?? "Settings"}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              Account and vault configuration.
+            </DialogDescription>
+            <DialogClose
+              aria-label="Close settings"
+              className="flex size-11 shrink-0 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+            >
+              <X className="size-5" />
+            </DialogClose>
+          </div>
+        ) : (
+          <DialogHeader className="border-b border-ob-border px-5 pt-4 pb-3">
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription className="sr-only">
+              Account and vault configuration.
+            </DialogDescription>
+          </DialogHeader>
+        )}
 
-        <div className="flex h-[min(660px,82vh)] min-h-0 flex-col sm:flex-row">
+        <div className="flex h-[min(660px,82dvh)] min-h-0 min-w-0 flex-col sm:flex-row max-md:h-auto max-md:flex-1">
+          {isMobile && !mobilePage && (
+            <nav aria-label="Settings sections" className="min-h-0 flex-1 overflow-y-auto py-2">
+              {tabs.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  className="flex min-h-12 w-full items-center justify-between gap-3 border-b border-ob-border px-4 text-left text-base text-ob-text active:bg-ob-hover"
+                >
+                  {t}
+                  <ChevronRight className="size-5 shrink-0 text-ob-faint" />
+                </button>
+              ))}
+            </nav>
+          )}
+          {!isMobile && (
           <nav
             aria-label="Settings sections"
             className="flex shrink-0 flex-row gap-0.5 overflow-x-auto border-b border-ob-border p-2 sm:w-44 sm:flex-col sm:overflow-x-visible sm:overflow-y-auto sm:border-r sm:border-b-0"
@@ -288,8 +351,10 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
               </button>
             ))}
           </nav>
+          )}
 
-          <div className="min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          {(!isMobile || mobilePage) && (
+          <div className={cn("min-h-0 min-w-0 flex-1 space-y-5 overflow-y-auto px-6 py-5", MOBILE_CONTENT)}>
             {tab === "Plugins" && <PluginsTab vaultId={vaultId} />}
             {tab === "AI" && <AiSettingsTab vaultId={vaultId} vaultName={vault?.name} />}
             {tab === "MCP" && <McpSettingsTab />}
@@ -303,27 +368,30 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
                   <h3 className="text-[11px] font-medium tracking-wide text-ob-faint uppercase">
                     About
                   </h3>
-                  <div className="flex items-center justify-between gap-4 text-[13px] text-ob-muted">
+                  <div className="flex items-center justify-between gap-4 text-[13px] text-ob-muted max-md:flex-col max-md:items-start max-md:gap-3">
                     <span>
                       Version {APP_VERSION}
                       <span className="block text-[11px] text-ob-faint">nodum — open-source</span>
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onOpenChange(false);
-                          useWorkspaceStore.getState().setTourOpen(true);
-                        }}
-                        className="rounded-md border border-ob-border px-2.5 py-1 text-[12px] text-ob-muted hover:text-ob-text"
-                      >
-                        Show the tour again
-                      </button>
+                    <div className="flex items-center gap-1.5 max-md:flex-wrap max-md:gap-2">
+                      {/* Tour targets are desktop chrome — absent on phones */}
+                      {!isMobile && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onOpenChange(false);
+                            useWorkspaceStore.getState().setTourOpen(true);
+                          }}
+                          className="rounded-md border border-ob-border px-2.5 py-1 text-[12px] text-ob-muted hover:text-ob-text"
+                        >
+                          Show the tour again
+                        </button>
+                      )}
                       <a
                         href={DOCS_URL}
                         target="_blank"
                         rel="noreferrer noopener"
-                        className="rounded-md border border-ob-border px-2.5 py-1 text-[12px] text-ob-muted hover:text-ob-text"
+                        className="rounded-md border border-ob-border px-2.5 py-1 text-[12px] text-ob-muted hover:text-ob-text max-md:inline-flex max-md:min-h-10 max-md:items-center max-md:px-3 max-md:text-sm"
                       >
                         Documentation
                       </a>
@@ -331,7 +399,7 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
                         href={HELP_URL}
                         target="_blank"
                         rel="noreferrer noopener"
-                        className="rounded-md border border-ob-border px-2.5 py-1 text-[12px] text-ob-muted hover:text-ob-text"
+                        className="rounded-md border border-ob-border px-2.5 py-1 text-[12px] text-ob-muted hover:text-ob-text max-md:inline-flex max-md:min-h-10 max-md:items-center max-md:px-3 max-md:text-sm"
                       >
                         GitHub
                       </a>
@@ -365,7 +433,7 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
                   <h3 className="text-[11px] font-medium tracking-wide text-ob-faint uppercase">
                     Password
                   </h3>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
                     <div className="space-y-2">
                       <Label htmlFor="pw-current">Current</Label>
                       <Input
@@ -632,12 +700,14 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
                   checked={userPrefs.confirmDelete}
                   onChange={(v) => saveEditorSettings.mutate({ confirmDelete: v })}
                 />
-                <SettingToggle
-                  label="Page preview requires ⌘/Ctrl"
-                  hint="Only show the hover preview while the modifier key is held."
-                  checked={userPrefs.previewRequireCmd}
-                  onChange={(v) => saveEditorSettings.mutate({ previewRequireCmd: v })}
-                />
+                {!isMobile && (
+                  <SettingToggle
+                    label="Page preview requires ⌘/Ctrl"
+                    hint="Only show the hover preview while the modifier key is held."
+                    checked={userPrefs.previewRequireCmd}
+                    onChange={(v) => saveEditorSettings.mutate({ previewRequireCmd: v })}
+                  />
+                )}
 
                 <div className="space-y-2">
                   <Label htmlFor="excluded-paths">Excluded files</Label>
@@ -664,7 +734,7 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
                 <h3 className="text-[11px] font-medium tracking-wide text-ob-faint uppercase">
                   Daily notes
                 </h3>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 max-md:grid-cols-1">
                   <div className="space-y-2">
                     <Label htmlFor="daily-format">Date format</Label>
                     <Input
@@ -808,6 +878,7 @@ export function SettingsModal({ vaultId, open, onOpenChange }: SettingsModalProp
               </section>
             )}
           </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
