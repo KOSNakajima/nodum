@@ -10,11 +10,13 @@
  * - click selects; Shift+click a second card draws an edge from the
  *   selected card; Delete removes the selected card (and its edges)
  * - double-click a text card to edit in place
+ * - touch: pinch zooms / two-finger pans; a selected card shows an action
+ *   bar (connect / edit / delete), tapping a selected text card edits it
  * - export / import .canvas JSON round-trips with Obsidian
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { FileDown, FileUp, StickyNote, FileText } from "lucide-react";
+import { FileDown, FileUp, Link2, Pencil, StickyNote, FileText, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ReadingView } from "@/components/editor/reading-view";
@@ -98,6 +100,8 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
   const [editing, setEditing] = useState<string | null>(null);
   const [notePicker, setNotePicker] = useState(false);
   const [noteQuery, setNoteQuery] = useState("");
+  // touch "Connect" mode: the next tapped card becomes the edge target
+  const [connecting, setConnecting] = useState(false);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,7 +111,13 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
     startX: number;
     startY: number;
     origin: { x: number; y: number; w?: number; h?: number };
+    /** touch tap on an already-selected text card → edit on release if not moved */
+    tapEdit?: boolean;
+    moved?: boolean;
   } | null>(null);
+  // Active pointers (for pinch) + the pinch gesture's starting state
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ d0: number; mx: number; my: number; ox: number; oy: number; s0: number } | null>(null);
 
   const persist = useCallback(
     (next: CanvasData) => {
@@ -133,6 +143,30 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
     [persist],
   );
 
+  const removeNode = useCallback(
+    (id: string) => {
+      mutate((d) => ({
+        nodes: d.nodes.filter((n) => n.id !== id),
+        edges: d.edges.filter((ed) => ed.fromNode !== id && ed.toNode !== id),
+      }));
+      setSelected(null);
+      setConnecting(false);
+    },
+    [mutate],
+  );
+
+  const connect = (fromId: string, toId: string) => {
+    mutate((d) => {
+      const from = d.nodes.find((n) => n.id === fromId);
+      const to = d.nodes.find((n) => n.id === toId);
+      if (!from || !to) return d;
+      return {
+        ...d,
+        edges: [...d.edges, { id: newId(), fromNode: from.id, toNode: to.id, ...autoSides(from, to) }],
+      };
+    });
+  };
+
   // Delete key removes the selected card + its edges
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -140,16 +174,12 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
         const target = e.target as HTMLElement;
         if (target.closest("input, textarea, [contenteditable]")) return;
         e.preventDefault();
-        mutate((d) => ({
-          nodes: d.nodes.filter((n) => n.id !== selected),
-          edges: d.edges.filter((ed) => ed.fromNode !== selected && ed.toNode !== selected),
-        }));
-        setSelected(null);
+        removeNode(selected);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected, editing, mutate]);
+  }, [selected, editing, removeNode]);
 
   const viewportCenterWorld = () => {
     const rect = stageRef.current?.getBoundingClientRect();
@@ -198,19 +228,53 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
     enabled: notePicker,
   });
 
+  /** Track every pointer (capture phase, before card/stage handlers); a second
+   *  finger turns the gesture into pinch-zoom + two-finger pan. */
+  const onRootPointerDownCapture = (e: React.PointerEvent) => {
+    if (e.isPrimary) pointers.current.clear(); // first finger: drop any stale entries
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size !== 2) return;
+    const [a, b] = [...pointers.current.values()];
+    const rect = stageRef.current?.getBoundingClientRect();
+    pinchRef.current = {
+      d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+      mx: (a.x + b.x) / 2 - (rect?.left ?? 0),
+      my: (a.y + b.y) / 2 - (rect?.top ?? 0),
+      ox: offset.x,
+      oy: offset.y,
+      s0: scale,
+    };
+    dragRef.current = null;
+  };
+
   const onStagePointerDown = (e: React.PointerEvent) => {
-    if (e.target !== e.currentTarget) return;
+    if (e.target !== e.currentTarget || pointers.current.size > 1) return;
     setSelected(null);
+    setConnecting(false);
     // editing textarea commits itself via blur — do not unmount it here
     dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, origin: { ...offset } };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const pinch = pinchRef.current;
+    if (pinch && pointers.current.size >= 2) {
+      const [a, b] = [...pointers.current.values()];
+      const rect = stageRef.current?.getBoundingClientRect();
+      const mx = (a.x + b.x) / 2 - (rect?.left ?? 0);
+      const my = (a.y + b.y) / 2 - (rect?.top ?? 0);
+      const next = Math.min(2, Math.max(0.25, (pinch.s0 * Math.hypot(a.x - b.x, a.y - b.y)) / pinch.d0));
+      // keep the world point under the starting midpoint under the current midpoint
+      setScale(next);
+      setOffset({ x: mx - ((pinch.mx - pinch.ox) / pinch.s0) * next, y: my - ((pinch.my - pinch.oy) / pinch.s0) * next });
+      return;
+    }
     const drag = dragRef.current;
     if (!drag) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
+    if (Math.abs(dx) + Math.abs(dy) > 6) drag.moved = true;
     if (drag.kind === "pan") {
       setOffset({ x: drag.origin.x + dx, y: drag.origin.y + dy });
     } else if (drag.kind === "move" && drag.nodeId) {
@@ -246,26 +310,25 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
     }
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId);
+    if (pinchRef.current) {
+      if (pointers.current.size < 2) pinchRef.current = null;
+      return;
+    }
     const drag = dragRef.current;
     dragRef.current = null;
+    if (drag?.tapEdit && !drag.moved && drag.nodeId) setEditing(drag.nodeId);
     if (drag && drag.kind !== "pan" && data) persist(data);
   };
 
   const onCardPointerDown = (e: React.PointerEvent, node: CanvasNode) => {
     e.stopPropagation();
-    if (editing === node.id) return;
-    if (e.shiftKey && selected && selected !== node.id) {
+    if (editing === node.id || pointers.current.size > 1) return;
+    if ((e.shiftKey || connecting) && selected && selected !== node.id) {
       // connect selected → clicked
-      mutate((d) => {
-        const from = d.nodes.find((n) => n.id === selected);
-        const to = d.nodes.find((n) => n.id === node.id);
-        if (!from || !to) return d;
-        return {
-          ...d,
-          edges: [...d.edges, { id: newId(), fromNode: from.id, toNode: to.id, ...autoSides(from, to) }],
-        };
-      });
+      connect(selected, node.id);
+      setConnecting(false);
       return;
     }
     setSelected(node.id);
@@ -275,12 +338,14 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
       startX: e.clientX,
       startY: e.clientY,
       origin: { x: node.x, y: node.y },
+      tapEdit: e.pointerType !== "mouse" && node.type === "text" && selected === node.id,
     };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   };
 
   const onResizeDown = (e: React.PointerEvent, node: CanvasNode) => {
     e.stopPropagation();
+    if (pointers.current.size > 1) return;
     dragRef.current = {
       kind: "resize",
       nodeId: node.id,
@@ -325,14 +390,19 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
   }
 
   const byId = new Map(data.nodes.map((n) => [n.id, n]));
+  const selectedNode = selected ? byId.get(selected) : undefined;
+  const actionBtn =
+    "flex size-10 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover hover:text-ob-text";
 
   return (
     <div
       className="relative h-full w-full overflow-hidden bg-ob-bg"
       data-canvas-root
       data-canvas-bg={canvasBackground}
+      onPointerDownCapture={onRootPointerDownCapture}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
     >
       {/* Board background pattern — pans/zooms with the stage */}
       <div
@@ -345,14 +415,14 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
         <button
           type="button"
           onClick={addTextCard}
-          className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+          className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] max-md:h-10 text-ob-muted hover:bg-ob-hover hover:text-ob-text"
         >
           <StickyNote className="size-4" strokeWidth={1.75} /> Text card
         </button>
         <button
           type="button"
           onClick={() => setNotePicker((v) => !v)}
-          className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+          className="flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] max-md:h-10 text-ob-muted hover:bg-ob-hover hover:text-ob-text"
         >
           <FileText className="size-4" strokeWidth={1.75} /> Note card
         </button>
@@ -361,7 +431,7 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
           type="button"
           aria-label="Export canvas"
           onClick={exportCanvas}
-          className="flex size-8 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-8 items-center justify-center rounded-md text-ob-muted max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
         >
           <FileDown className="size-4" strokeWidth={1.75} />
         </button>
@@ -369,7 +439,7 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
           type="button"
           aria-label="Import canvas"
           onClick={() => importInput.current?.click()}
-          className="flex size-8 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-8 items-center justify-center rounded-md text-ob-muted max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
         >
           <FileUp className="size-4" strokeWidth={1.75} />
         </button>
@@ -387,9 +457,44 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
           }}
         />
       </div>
-      <p className="absolute bottom-3 left-3 z-20 text-[11px] text-ob-faint">
+      <p className="absolute bottom-3 left-3 z-20 text-[11px] text-ob-faint max-md:hidden pointer-coarse:hidden">
         Drag to pan · wheel to zoom · Shift+click connects cards · Delete removes
       </p>
+      <p className="absolute right-3 bottom-3 left-3 z-20 hidden text-[11px] text-ob-faint max-md:block pointer-coarse:block">
+        {connecting ? "Tap another card to connect it" : "Drag to pan · pinch to zoom · tap a card for actions"}
+      </p>
+
+      {/* Touch action bar for the selected card (desktop uses Shift+click / Delete / double-click) */}
+      {selectedNode && !editing && (
+        <div
+          role="toolbar"
+          aria-label="Card actions"
+          className="absolute bottom-9 left-1/2 z-20 hidden -translate-x-1/2 items-center gap-1 rounded-lg border border-ob-border bg-ob-sidebar/95 p-1 shadow-lg backdrop-blur max-md:flex pointer-coarse:flex"
+        >
+          <button
+            type="button"
+            aria-label="Connect card"
+            aria-pressed={connecting}
+            onClick={() => setConnecting((v) => !v)}
+            className={`${actionBtn} ${connecting ? "bg-ob-hover text-ob-accent" : ""}`}
+          >
+            <Link2 className="size-5" strokeWidth={1.75} />
+          </button>
+          {selectedNode.type === "text" && (
+            <button type="button" aria-label="Edit card" onClick={() => setEditing(selectedNode.id)} className={actionBtn}>
+              <Pencil className="size-5" strokeWidth={1.75} />
+            </button>
+          )}
+          <button
+            type="button"
+            aria-label="Delete card"
+            onClick={() => removeNode(selectedNode.id)}
+            className={actionBtn}
+          >
+            <Trash2 className="size-5" strokeWidth={1.75} />
+          </button>
+        </div>
+      )}
 
       {/* Note picker */}
       {notePicker && (
@@ -400,7 +505,7 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
             onChange={(e) => setNoteQuery(e.target.value)}
             placeholder="Find a note…"
             aria-label="Find a note for the canvas"
-            className="mb-1 h-8 w-full rounded border border-ob-border bg-ob-bg px-2 text-[13px] text-ob-text outline-none"
+            className="mb-1 h-8 w-full rounded border border-ob-border bg-ob-bg px-2 text-[13px] text-ob-text outline-none max-md:h-10 max-md:text-[16px]"
           />
           {pickerResults?.map((r) => (
             <button
@@ -481,7 +586,7 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
                       setEditing(null);
                     }}
                     onPointerDown={(e) => e.stopPropagation()}
-                    className="h-full w-full resize-none bg-transparent p-3 text-[13px] text-ob-text outline-none"
+                    className="h-full w-full resize-none bg-transparent p-3 text-[13px] text-ob-text outline-none max-md:text-[16px]"
                   />
                 ) : (
                   <div className="nodum-canvas-card-body h-full overflow-auto p-3 text-[13px]">
@@ -506,8 +611,12 @@ export function CanvasView({ vaultId, canvasId }: { vaultId: string; canvasId: s
                 role="presentation"
                 aria-label="Resize card"
                 onPointerDown={(e) => onResizeDown(e, node)}
-                className="absolute right-0 bottom-0 size-4 cursor-nwse-resize"
-                style={{ background: "linear-gradient(135deg, transparent 55%, var(--ob-background-modifier-border) 55%)" }}
+                // coarse pointers get a 40px hit area; the visible triangle stays 16px
+                className="absolute right-0 bottom-0 size-4 cursor-nwse-resize pointer-coarse:size-10"
+                style={{
+                  background:
+                    "linear-gradient(135deg, transparent 55%, var(--ob-background-modifier-border) 55%) right bottom / 16px 16px no-repeat",
+                }}
               />
             </div>
           ))}
