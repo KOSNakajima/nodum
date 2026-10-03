@@ -25,8 +25,8 @@ RUN_DIR="${TMPDIR:-/tmp}/nodum-e2e"
 PG_PORT=15432
 REDIS_PORT=16379
 MINIO_PORT=19000
-API_PORT=8000
-WEB_PORT=3100
+API_PORT=${API_PORT:-8000}
+WEB_PORT=${WEB_PORT:-3100}
 
 # Matches CI: pgvector, because a migration creates the extension and plain
 # postgres fails at `CREATE EXTENSION vector` with nothing else wrong.
@@ -123,7 +123,10 @@ up() {
   stop_port "$WEB_PORT" "next start -p $WEB_PORT"
   (cd "$ROOT/web" && API_PROXY_URL="http://127.0.0.1:$API_PORT" NEXT_TELEMETRY_DISABLED=1 \
     npm run build >"$RUN_DIR/build.log" 2>&1) || { tail -30 "$RUN_DIR/build.log"; die "web build failed"; }
-  start_detached "$ROOT/web" "$RUN_DIR/web.log" npx next start -p "$WEB_PORT"
+  # Also at runtime: the server-rendered public pages (published notes, forum)
+  # read API_PROXY_URL when they fetch, and without it fall back to :8000.
+  start_detached "$ROOT/web" "$RUN_DIR/web.log" \
+    env API_PROXY_URL="http://127.0.0.1:$API_PORT" npx next start -p "$WEB_PORT"
   wait_for web "curl -sf http://127.0.0.1:$WEB_PORT"
 
   printf '\n\033[32m✓\033[0m stack up. Run the suite with:\n\n    cd web && BASE_URL=http://127.0.0.1:%s npx playwright test\n\n' "$WEB_PORT"
