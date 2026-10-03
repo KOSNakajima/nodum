@@ -94,6 +94,8 @@ Legend: ✅ done · 🔨 in progress · ⬜ todo · 🔮 post-v1
 - ⬜ Resizable/collapsible sidebars; layout persisted per user
 - ⬜ Settings modal (account, appearance, hotkeys list, daily notes config, templates config)
 - ⬜ Onboarding: new user → default vault with welcome notes demonstrating features
+- ✅ Phone layout (Obsidian-mobile model): bottom nav bar, keyboard toolbar,
+  swipe drawers, tab switcher, drill-down settings, touch canvas/graph
 
 ### 2.7 Platform
 - ⬜ Auth: email+password signup/login, JWT access (15m) + refresh (7d) rotation,
@@ -222,6 +224,52 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 - Never commit `.env` — only `.env.example` with placeholder values + generation commands.
 
 ## 6. Progress Log
+
+- **2026-10-03: the phone UI rebuilt on Obsidian mobile's model**
+  (`feature/1.mobile-ux_maqbool_031020260849`). Driven by a screenshot tour at
+  iPhone size, a research pass on Obsidian mobile (1.4–1.11) and mobile-web
+  practice, and a code audit that found 21 problems. The worst were features
+  that could not be reached by touch: log out, graph, daily note and the
+  command palette lived only on the hidden ribbon or behind keyboard chords.
+  - *Chrome.* The top bar now holds the left drawer, the note title and the
+    right drawer. A bottom nav bar adds back, forward, new note, the quick
+    switcher, a tab-count switcher sheet, and a Menu sheet with the ribbon's
+    actions. Below 768px there is no tab strip, status bar or split, and only
+    the active pane is drawn.
+  - *Editing.* A formatting toolbar rides the keyboard (`MobileEditToolbar` +
+    `useVirtualKeyboard`). It uses visualViewport insets on iOS and
+    `interactive-widget=resizes-content` on Android, its buttons never take
+    focus from CM6, and the bottom bar steps aside while it shows.
+  - *Touch-only changes.* The editor's long-press context menu is disabled on
+    coarse pointers, because it fought text selection. Hover page previews are
+    off on touch. Explorer rows are a real 40px with HTML drag off, so
+    long-press reaches the row menu.
+  - *Drawers.* The drawers are a Radix-based `Sheet` with focus trap, Escape,
+    slide animation, swipe to dismiss and an edge swipe to open. Drawer state
+    is in the store (`mobileDrawer`), so a pane picked anywhere brings up its
+    drawer.
+  - *Settings.* Settings is a full-screen list, with a page per category; the
+    Hotkeys tab and the tour button are hidden on phones.
+  - *Canvas and graph.* Canvas gets pinch-zoom and a touch action bar
+    (connect / edit / delete). The graph's highlight no longer sticks after a
+    tap.
+  - *Globals.* Fields are 16px on phones (iOS zoom), 44px menu and option rows
+    on touch, `h-dvh`, safe-area insets with `viewport-fit=cover`, and dialogs
+    anchored to the top on phones with no horizontal overflow.
+  - *Found doing it.* In production builds Radix's outside-press detection
+    swallowed the first backdrop tap after a drawer opened, and only the second
+    tap closed it. `Sheet` now closes on overlay pointerdown. The cause inside
+    Radix was not pinned down.
+  - *Tooling.* `deploy/e2e-stack.sh` takes `API_PORT` / `WEB_PORT` from the
+    environment, so it can run beside another project holding :8000.
+  - *Testing.* A new touch-profile spec in `mobile-workspace.spec.ts` covers
+    the bottom bar, the keyboard toolbar (Bold applied without losing focus),
+    the Menu leading to the graph, the tab switcher, Back, and the settings
+    drill-down.
+  - *Still open.* Swipe gestures and the iOS keyboard inset have only been
+    exercised in emulation; they need a check on a real phone. The graph's
+    cosmos hover ring can linger on the last-touched node. Canvas edges cannot
+    be selected on any device.
 
 - **2026-09-18 (v3.11.0): the `nodum` CLI lands as its own package** (PR #87,
   by @ziuus, over five review rounds). `cli/` joins `back/` and `web/` as a
