@@ -32,10 +32,11 @@ WEB_PORT=${WEB_PORT:-3100}
 # postgres fails at `CREATE EXTENSION vector` with nothing else wrong.
 PG_IMAGE="pgvector/pgvector:0.8.0-pg16"
 REDIS_IMAGE="redis:7.4.2-alpine"
-# quay.io, not Docker Hub: MinIO deleted the `minio/minio` Hub repository in
-# September 2026 and it now 401s for every tag. Pinned rather than floating so
-# the e2e stack cannot drift onto a release the app has never been run against.
-MINIO_IMAGE="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+# Chainguard's build of the MinIO server, pinned by digest so the stack cannot
+# drift. Same image as CI (ci-backend.yml / ci-e2e.yml). MinIO's own images
+# are gone: Docker Hub `minio/minio` was deleted in September 2026 and
+# quay.io/minio/minio has answered 401 since October 2026.
+MINIO_IMAGE="cgr.dev/chainguard/minio@sha256:4cf4831a2bbcf13ddca09c1cbcc9faff716dd3c4247e0babc32864b8ee8e0034"
 
 export POSTGRES_SERVER=localhost POSTGRES_PORT=$PG_PORT
 export POSTGRES_USER=nodum POSTGRES_PASSWORD=nodum POSTGRES_DB=nodum
