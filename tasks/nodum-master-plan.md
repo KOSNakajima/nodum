@@ -225,6 +225,22 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-05: Agentation works at phone widths** (`bug/1.agentation-mobile_maqbool_051020260040`).
+  - The dev toolbar had been hidden below 768px because its default corner
+    (20px from the bottom) covered the bottom nav and the keyboard toolbar.
+    It renders on phones again.
+  - Agentation draws inside an open shadow root, so page CSS cannot move it.
+    `agentation-dev-tools.tsx` instead puts one `@media (max-width: 767px)`
+    rule inside that root, lifting the default spot to
+    `bottom: calc(64px + safe-area)`. Once you drag the toolbar, Agentation
+    positions it with inline left/top and the rule leaves it alone.
+  - Measured at 400×922: toolbar bottom at 858, bottom nav top at 869,
+    keyboard toolbar top at 877. Annotating by touch works and the popup
+    stays on screen.
+  - *Known quirk:* in annotate mode, tapping a wikilink also follows it,
+    because live-preview navigates on pointerdown, before Agentation's click
+    capture. Likely the same with a mouse.
+
 - **2026-10-04: mobile feedback round 1** (`feature/3.mobile-feedback_maqbool_041020261601`),
   from Agentation annotations made at 400×922.
   - *New note was broken everywhere* (not only on phones). The generated title
