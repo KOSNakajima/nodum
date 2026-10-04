@@ -13,6 +13,8 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 
+import { ApiError } from "@/lib/api/client";
+import { noteApi } from "@/lib/api/endpoints";
 import type { Note, Vault } from "@/lib/api/types";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 
@@ -55,4 +57,26 @@ function getActiveNotePath(queryClient: QueryClient, vaultId: string): string | 
   const tab = pane?.tabs.find((t) => t.id === pane.activeTabId && t.kind === "note");
   if (!tab) return undefined;
   return queryClient.getQueryData<Note>(["note", vaultId, tab.id])?.path;
+}
+
+/**
+ * Create a blank note named the way Obsidian names one — "Untitled", then
+ * "Untitled 1", "Untitled 2", … taking the first free name in the target
+ * folder. (A timestamp title used to be generated here, but its "HH:MM" put a
+ * ":" in the name, which note names may not contain: every create was a 422.)
+ */
+export async function createUntitledNote(vaultId: string, folderPath?: string): Promise<Note> {
+  for (let n = 0; n < 1000; n++) {
+    try {
+      return await noteApi.create(vaultId, {
+        title: n === 0 ? "Untitled" : `Untitled ${String(n)}`,
+        folder_path: folderPath,
+      });
+    } catch (err) {
+      // 409 = that name is taken in this folder; anything else is real.
+      if (err instanceof ApiError && err.status === 409) continue;
+      throw err;
+    }
+  }
+  throw new Error("Could not find a free “Untitled” name.");
 }

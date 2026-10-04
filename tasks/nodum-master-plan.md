@@ -225,6 +225,28 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-04: mobile feedback round 1** (`feature/3.mobile-feedback_maqbool_041020261601`),
+  from Agentation annotations made at 400×922.
+  - *New note was broken everywhere* (not only on phones). The generated title
+    `Untitled YYYY-MM-DD HH:MM` contains `:`, which note names may not hold, so
+    every ⌘N / "+" / empty-state create was a 422. The mutation also had no
+    error handler, so the button just looked dead. Now `createUntitledNote`
+    names notes like Obsidian ("Untitled", "Untitled 1", …, retrying on 409),
+    and a failure raises a toast. No e2e test had ever pressed the button;
+    one does now.
+  - Explorer collapsed folders live in the store, persisted per vault
+    (`explorerCollapsed`), and the scroll position is remembered. Closing the
+    sidebar or the phone drawer no longer re-expands everything.
+  - Each folder row has a graph button, always visible on touch and on hover
+    with a mouse. It scopes the main graph to that folder and its subfolders
+    (`graphFolder`, transient). A "Folder: X ×" chip clears the scope, and the
+    camera fits every node in it. Opening the graph any other way shows the
+    whole vault.
+  - The phone drawer header has a graph button (desktop keeps the ribbon's).
+  - The Import dialog is a full-screen sheet on phones, like Settings, instead
+    of a cut-off card. Its Live Sync rows' icon tiles now match the other
+    sources' (40px), so the text lines up.
+
 - **2026-10-04: the dev api and worker no longer need PyPI to boot**
   (`bug/2.dev-boot-offline_maqbool_041020261401`). After a DNS blip, the dev
   `nodum-api-dev` and `nodum-celery-dev` containers crash-looped with "Failed

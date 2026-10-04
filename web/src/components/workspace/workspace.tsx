@@ -50,7 +50,7 @@ import { OnboardingTour } from "./onboarding-tour";
 import { FONT_CHOICES, useEditorSettings, useUserPrefs } from "@/lib/hooks/use-editor-settings";
 import { useIsMobile } from "@/lib/hooks/use-is-mobile";
 import { useVirtualKeyboard } from "@/lib/hooks/use-virtual-keyboard";
-import { resolveNewNoteFolder } from "@/lib/new-note-location";
+import { createUntitledNote, resolveNewNoteFolder } from "@/lib/new-note-location";
 import { usePlugins } from "@/lib/plugins/use-plugins";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
@@ -232,6 +232,9 @@ export function Workspace({ vault }: { vault: Vault }) {
   }, [vault.id, openTab, setGraphFocus]);
 
   const openGraph = useCallback(() => {
+    // The whole vault: opening the graph from anywhere but a folder's own
+    // graph button drops a folder scope left over from earlier.
+    useWorkspaceStore.getState().setGraphFolder(null);
     openTab({ id: "graph", kind: "graph", title: "Graph view" });
   }, [openTab]);
 
@@ -255,19 +258,14 @@ export function Workspace({ vault }: { vault: Vault }) {
   );
 
   const newNote = useMutation({
-    mutationFn: () => {
-      const stamp = new Date();
-      const title = `Untitled ${stamp.toISOString().slice(0, 16).replace("T", " ")}`;
-      return noteApi.create(vault.id, {
-        title,
-        folder_path: resolveNewNoteFolder(queryClient, vault.id),
-      });
-    },
+    mutationFn: () => createUntitledNote(vault.id, resolveNewNoteFolder(queryClient, vault.id)),
     onSuccess: (note) => {
       void queryClient.invalidateQueries({ queryKey: ["tree", vault.id] });
       void queryClient.invalidateQueries({ queryKey: ["graph", vault.id] });
       openNote(note.id, note.title);
     },
+    // A failed create used to do nothing at all — the button looked dead.
+    onError: (err) => toastError(err, "Could not create note."),
   });
 
   const closeTab = useWorkspaceStore((s) => s.closeTab);
