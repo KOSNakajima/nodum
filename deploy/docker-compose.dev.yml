@@ -59,7 +59,6 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - ../back:/app
-      - api_venv:/app/.venv
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,7 +106,6 @@ services:
       - OAUTH_ENCRYPTION_KEY=${OAUTH_ENCRYPTION_KEY:-dev-only-ai-encryption-key-change-me}
     volumes:
       - ../back:/app
-      - celery_venv:/app/.venv
     depends_on:
       postgres:
         condition: service_healthy
@@ -143,7 +141,5 @@ services:
       - app_network
 
 volumes:
-  api_venv:
-  celery_venv:
   web_node_modules:
   web_next:

@@ -225,6 +225,25 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-04: the dev api and worker no longer need PyPI to boot**
+  (`bug/2.dev-boot-offline_maqbool_041020261401`). After a DNS blip, the dev
+  `nodum-api-dev` and `nodum-celery-dev` containers crash-looped with "Failed
+  to build `nodum`: hatchling … dns error". The dev image never installed the
+  project itself, so every `uv run` built it at container start, and the
+  venv lived in named volumes that were filled once and then went stale
+  against later lock changes.
+  - The development stage now installs the project at build time into
+    `/opt/venv` (`UV_PROJECT_ENVIRONMENT`), outside the `../back:/app` bind
+    mount, and the `api_venv` / `celery_venv` volumes are gone. Rebuilding
+    the image is what refreshes dependencies. Verified with
+    `docker run --network none`: the app imports and celery starts.
+  - Worker logs: structlog's stdout was re-logged by Celery at WARNING, so
+    every info event read as `WARNING/ForkPoolWorker`. Now
+    `worker_redirect_stdouts_level="INFO"`.
+  - After pulling this, run `make dev-down && make dev-up` (the build step
+    is included). The old `nodum-dev_api_venv` / `nodum-dev_celery_venv`
+    volumes become unused and can be removed.
+
 - **2026-10-03: the phone UI rebuilt on Obsidian mobile's model**
   (`feature/1.mobile-ux_maqbool_031020260849`). Driven by a screenshot tour at
   iPhone size, a research pass on Obsidian mobile (1.4–1.11) and mobile-web
