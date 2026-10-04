@@ -14,6 +14,8 @@
 
 import dynamic from "next/dynamic";
 
+import { useIsMobile } from "@/lib/hooks/use-is-mobile";
+
 const Agentation =
   process.env.NODE_ENV === "development"
     ? dynamic(() => import("agentation").then((m) => m.Agentation), { ssr: false })
@@ -25,12 +27,17 @@ const Agentation =
  * agentation MCP server (stdio for the agent, HTTP on 4747 for the browser)
  * closes the loop: the agent reads pending annotations itself. The server is
  * registered per-developer (`claude mcp add --scope local agentation --
- * npx -y agentation-mcp server`), so when it is not running the toolbar just
- * falls back to localStorage — nothing to guard here.
+ * npx --prefer-offline -y agentation-mcp server`; --prefer-offline skips the
+ * registry round trip that otherwise makes a network blip time the server out
+ * at session start). When it is not running the toolbar just falls back to
+ * localStorage — nothing to guard here. `npx agentation-mcp doctor` checks it.
  */
 const AGENTATION_ENDPOINT = "http://localhost:4747";
 
 export function AgentationDevTools() {
-  if (!Agentation) return null;
+  // Agentation is desktop-only, and at phone widths its floating button sits
+  // on the bottom nav bar and the keyboard toolbar.
+  const isMobile = useIsMobile();
+  if (!Agentation || isMobile) return null;
   return <Agentation endpoint={AGENTATION_ENDPOINT} />;
 }
