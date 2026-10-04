@@ -30,6 +30,7 @@ import {
   subscribeNoteHover,
   type NoteHover,
 } from "@/lib/graph/hover-bus";
+import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { cn } from "@/lib/utils";
 
 // Most label elements the overlay will hold. This bounds the DOM only, and it
@@ -159,6 +160,10 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
   const [hovered, setHovered] = useState<{ title: string; x: number; y: number } | null>(null);
   // Time travel: reveal the first p% of nodes in creation order (100 = now)
   const [timePercent, setTimePercent] = useState(100);
+  // The explorer's per-folder graph button scopes the main graph to one
+  // folder (and its subfolders). Never the sidebar's local graph.
+  const storeFolder = useWorkspaceStore((s) => s.graphFolder);
+  const scopeFolder = compact ? null : storeFolder;
   const [playing, setPlaying] = useState(false);
   const queryClient = useQueryClient();
 
@@ -393,6 +398,12 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
     // matches (see the search-highlight effect), so the graph keeps its shape.
     data.nodes.forEach((node, i) => {
       if (revealed && !revealed.has(i)) return;
+      // Scoped: only the folder's own notes; a ghost has no folder to be in.
+      if (
+        scopeFolder !== null &&
+        (node.unresolved || (node.folder !== scopeFolder && !node.folder.startsWith(`${scopeFolder}/`)))
+      )
+        return;
       if (!showGhosts && node.unresolved) return;
       if (!showOrphans && node.degree === 0) return;
       remap.set(i, keep.length);
@@ -403,7 +414,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
       .filter(([s, t]) => remap.has(s) && remap.has(t))
       .map(([s, t]) => [remap.get(s) as number, remap.get(t) as number] as [number, number]);
     return { nodes, edges };
-  }, [data, showGhosts, showOrphans, timePercent]);
+  }, [data, showGhosts, showOrphans, timePercent, scopeFolder]);
 
   // ── Incremental engine (Obsidian-study parity: never re-randomize) ────────
   // Positions survive data changes, filter/group tweaks, AND unmount/remount
@@ -426,7 +437,16 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
   // Set on a fresh (non-restored) first build; the sim-end handler / pause
   // fallback fits the camera to the settled layout exactly once.
   const fitOnSettleRef = useRef(false);
-  const labelRef = useRef<{
+
+  // Scoping to a folder (or clearing it) swaps most of the graph out: frame
+  // what is left once it settles, rather than keeping the old camera on space
+  // that is now empty.
+  const lastScopeRef = useRef(scopeFolder);
+  useEffect(() => {
+    if (lastScopeRef.current === scopeFolder) return;
+    lastScopeRef.current = scopeFolder;
+    fitOnSettleRef.current = true;
+  }, [scopeFolder]);  const labelRef = useRef<{
     overlay: HTMLDivElement;
     els: Map<number, HTMLDivElement>;
     /** Label width per 1px of font size — measured once, scaled per frame. */
@@ -794,7 +814,9 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
     if (!graph) return;
     const flat = graph.getPointPositions();
     const count = flat ? Math.floor(flat.length / 2) : 0;
-    if (!flat || count < 12) {
+    // A folder's graph is small and every note in it was asked for: frame all
+    // of it, rather than trimming its edges as the whole-vault fit does.
+    if (!flat || count < 12 || lastScopeRef.current !== null) {
       graph.fitView(duration);
       // Also the reference view — without this a small vault never recorded one,
       // so every zoom read as "exactly the fit view" and the fade never moved.
@@ -1638,6 +1660,24 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
           style={{ left: hovered.x + 12, top: hovered.y + 12 }}
         >
           {hovered.title}
+        </div>
+      )}
+
+      {/* Which folder the graph is scoped to, and the way back out. */}
+      {scopeFolder !== null && (
+        <div className="absolute top-3 left-3 z-10 flex max-w-[45%] items-center gap-1 rounded-md border border-ob-border bg-[var(--ob-color-base-25)] py-0.5 pr-0.5 pl-2 text-[12px] text-ob-muted shadow-lg max-md:text-[13px]">
+          <span className="truncate">
+            Folder: <span className="text-ob-text">{scopeFolder.split("/").at(-1)}</span>
+          </span>
+          <button
+            type="button"
+            aria-label="Show the whole vault"
+            title="Show the whole vault"
+            onClick={() => useWorkspaceStore.getState().setGraphFolder(null)}
+            className="flex size-6 shrink-0 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text max-md:size-9"
+          >
+            <X className="size-3.5" strokeWidth={1.75} />
+          </button>
         </div>
       )}
 

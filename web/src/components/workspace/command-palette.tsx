@@ -23,7 +23,7 @@ import {
   parseEditorSettings,
   parseUserPrefs,
 } from "@/lib/hooks/use-editor-settings";
-import { resolveNewNoteFolder } from "@/lib/new-note-location";
+import { createUntitledNote, resolveNewNoteFolder } from "@/lib/new-note-location";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import type { PluginCommand } from "@/lib/plugins/types";
@@ -190,10 +190,7 @@ export function CommandPalette({
   };
 
   const createNoteRight = async () => {
-    const created = await noteApi.create(vaultId, {
-      title: `Untitled ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
-      folder_path: resolveNewNoteFolder(queryClient, vaultId),
-    });
+    const created = await createUntitledNote(vaultId, resolveNewNoteFolder(queryClient, vaultId));
     void queryClient.invalidateQueries({ queryKey: ["tree", vaultId] });
     void queryClient.invalidateQueries({ queryKey: ["graph", vaultId] });
     if (useWorkspaceStore.getState().panes.length < 2) useWorkspaceStore.getState().splitRight();

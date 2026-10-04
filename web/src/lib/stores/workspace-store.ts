@@ -291,6 +291,15 @@ interface WorkspaceState {
    *  up — on a phone the pane is otherwise invisible. Ignored on desktop. */
   mobileDrawer: "left" | "right" | null;
   setMobileDrawer: (drawer: "left" | "right" | null) => void;
+  /** Collapsed explorer folders, per vault. In the store (and persisted) so
+   *  closing the sidebar or the phone drawer — which unmounts the explorer —
+   *  no longer re-expands everything. */
+  explorerCollapsed: Record<string, string[]>;
+  setExplorerCollapsed: (vaultId: string, folderIds: string[]) => void;
+  /** Graph scoped to one folder's notes (the folder graph button); null = the
+   *  whole vault. Transient — opening the graph any other way clears it. */
+  graphFolder: string | null;
+  setGraphFolder: (folderPath: string | null) => void;
   /** One-shot query seed for the search pane (tag pane click-to-search). */
   searchSeed: string | null;
 
@@ -379,6 +388,7 @@ type Persisted = Pick<
   | "splitOrientation"
   | "editorMode"
   | "explorerSort"
+  | "explorerCollapsed"
 >;
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -413,6 +423,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       tourOpen: false,
       leftPane: "files",
       mobileDrawer: null,
+      explorerCollapsed: {},
+      graphFolder: null,
       searchSeed: null,
 
       setActiveVault: (vaultId) => {
@@ -802,6 +814,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setTourOpen: (open) => set({ tourOpen: open }),
       setLeftPane: (pane) => set({ leftPane: pane, mobileDrawer: "left" }),
       setMobileDrawer: (drawer) => set({ mobileDrawer: drawer }),
+      setExplorerCollapsed: (vaultId, folderIds) =>
+        set((s) => ({ explorerCollapsed: { ...s.explorerCollapsed, [vaultId]: folderIds } })),
+      setGraphFolder: (folderPath) => set({ graphFolder: folderPath }),
       setSearchSeed: (q) => set({ searchSeed: q }),
     }),
     {
@@ -873,6 +888,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         splitOrientation: s.splitOrientation,
         editorMode: s.editorMode,
         explorerSort: s.explorerSort,
+        explorerCollapsed: s.explorerCollapsed,
       }),
     },
   ),
