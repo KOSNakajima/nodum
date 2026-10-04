@@ -18,6 +18,7 @@ import { PickerDialog } from "@/components/workspace/picker-dialog";
 import { attachmentApi, vaultApi } from "@/lib/api/endpoints";
 import type { TreeItem } from "@/lib/api/types";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
+import { useCoarsePointer } from "@/lib/hooks/use-is-mobile";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 
 import {
@@ -239,6 +240,10 @@ export function EditorContextMenu({
   children: ReactNode;
 }) {
   const toast = useToastStore((s) => s.push);
+  // On touch, a long-press over text is how you SELECT it; a menu that opens
+  // on the same gesture steals the selection and drops the keyboard. The
+  // keyboard toolbar carries the formatting there instead.
+  const coarse = useCoarsePointer();
   const setLeftPane = useWorkspaceStore((s) => s.setLeftPane);
   const setSearchSeed = useWorkspaceStore((s) => s.setSearchSeed);
   const leftSidebarOpen = useWorkspaceStore((s) => s.leftSidebarOpen);
@@ -335,7 +340,9 @@ export function EditorContextMenu({
 
   return (
     <ContextMenu onOpenChange={onOpenChange}>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild disabled={coarse}>
+        {children}
+      </ContextMenuTrigger>
       <ContextMenuContent className="w-60">
         {/* 1 — what you do with the words you just selected. */}
         <Item label="Add link" onSelect={() => setLinking("note")} />

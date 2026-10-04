@@ -4,18 +4,24 @@
 
 import { useSyncExternalStore } from "react";
 
-const QUERY = "(max-width: 767px)";
-
-function subscribe(onChange: () => void): () => void {
-  const mql = window.matchMedia(QUERY);
-  mql.addEventListener("change", onChange);
-  return () => mql.removeEventListener("change", onChange);
+function useMedia(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mql = window.matchMedia(query);
+      mql.addEventListener("change", onChange);
+      return () => mql.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
 }
 
 export function useIsMobile(): boolean {
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(QUERY).matches,
-    () => false,
-  );
+  return useMedia("(max-width: 767px)");
+}
+
+/** A finger, not a mouse — phones AND tablets. For gestures that fight touch
+ *  (long-press menus over text, drag-and-drop), not for layout. */
+export function useCoarsePointer(): boolean {
+  return useMedia("(pointer: coarse)");
 }

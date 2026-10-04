@@ -352,7 +352,7 @@ export function CommandPalette({
           showSearchIcon={false}
           onClose={() => setOpen(false)}
         />
-        <CommandList className="max-h-[min(60vh,560px)]">
+        <CommandList className="max-h-[min(60dvh,560px)] max-md:max-h-[50dvh]">
           <CommandEmpty>No matching commands.</CommandEmpty>
           {commands.map((c) => (
             <CommandItem
@@ -369,7 +369,7 @@ export function CommandPalette({
             </CommandItem>
           ))}
         </CommandList>
-        <div className="flex items-center justify-center gap-4 border-t border-ob-border px-3 py-2 text-[11px] text-ob-faint">
+        <div className="flex items-center justify-center gap-4 border-t border-ob-border px-3 py-2 text-[11px] text-ob-faint pointer-coarse:hidden">
           <span>
             <kbd className="rounded border border-ob-border px-1">↑↓</kbd> to navigate
           </span>

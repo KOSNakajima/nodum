@@ -16,7 +16,7 @@ export function Toaster() {
   return (
     <div // Above dialogs/popovers (which use z-50 and their own stacking contexts) —
       // a toast the user cannot read is worse than no toast.
-      className="pointer-events-none fixed bottom-4 left-4 z-[100] flex w-80 flex-col gap-2">
+      className="pointer-events-none fixed bottom-4 left-4 z-[100] flex w-80 flex-col gap-2 max-md:inset-x-2 max-md:bottom-[calc(64px+env(safe-area-inset-bottom))] max-md:w-auto">
       {toasts.map((t) => (
         <div
           key={t.id}

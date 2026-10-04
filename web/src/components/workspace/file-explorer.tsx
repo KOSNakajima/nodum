@@ -41,7 +41,7 @@ import { confirmDelete } from "./confirm-dialog";
 import { bookmarkApi, folderApi, noteApi, searchApi, vaultApi } from "@/lib/api/endpoints";
 import { setNoteHover } from "@/lib/graph/hover-bus";
 import { itemColorsOf, type ItemColorMap } from "@/lib/graph/item-colors";
-import { useIsMobile } from "@/lib/hooks/use-is-mobile";
+import { useCoarsePointer, useIsMobile } from "@/lib/hooks/use-is-mobile";
 import type { TreeItem, Vault } from "@/lib/api/types";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { type ExplorerSort, useWorkspaceStore } from "@/lib/stores/workspace-store";
@@ -441,6 +441,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
   );
 
   const isMobile = useIsMobile();
+  const coarse = useCoarsePointer();
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
@@ -691,7 +692,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           type="button"
           aria-label="New note"
           onClick={() => startCreate("note")}
-          className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
         >
           <FilePlus2 className="size-4" strokeWidth={1.75} />
         </button>
@@ -699,7 +700,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           type="button"
           aria-label="New folder"
           onClick={() => startCreate("folder")}
-          className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
         >
           <FolderPlus className="size-4" strokeWidth={1.75} />
         </button>
@@ -708,7 +709,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
             <button
               type="button"
               aria-label="Change sort order"
-              className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text"
+              className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
             >
               <ArrowUpDown className="size-4" strokeWidth={1.75} />
             </button>
@@ -733,7 +734,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           title="Show the open note, collapse everything else"
           onClick={revealActive}
           disabled={!activeNoteId}
-          className="ml-auto flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
+          className="ml-auto flex size-6 items-center max-md:size-10 justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <LocateFixed className="size-4" strokeWidth={1.75} />
         </button>
@@ -743,7 +744,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           title={allCollapsed ? "Expand all" : "Collapse all"}
           onClick={toggleAll}
           disabled={allFolderIds.length === 0}
-          className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
+          className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
         >
           {allCollapsed ? (
             <ChevronsUpDown className="size-4" strokeWidth={1.75} />
@@ -766,7 +767,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                   top: 0,
                   left: 0,
                   width: "100%",
-                  height: ROW_HEIGHT,
+                  height: isMobile ? ROW_HEIGHT_TOUCH : ROW_HEIGHT,
                   transform: `translateY(${String(vRow.start)}px)`,
                 }}
               >
@@ -781,7 +782,8 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                           toggleFolder(row.id);
                         }}
                         onKeyDown={(e) => e.key === "Enter" && toggleFolder(row.id)}
-                        className="flex h-[26px] cursor-default items-center gap-1 rounded px-2 text-[13px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+                        data-touch-row
+                        className="flex h-[26px] cursor-default items-center gap-1 rounded px-2 text-[13px] text-ob-muted select-none hover:bg-ob-hover hover:text-ob-text max-md:h-10 max-md:text-[15px]"
                         style={{ paddingLeft: 8 + row.depth * 14 }}
                       >
                         {row.collapsed ? (
@@ -862,7 +864,10 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                         // matching node) — see lib/graph/hover-bus.
                         onMouseEnter={() => setNoteHover({ id: row.id })}
                         onMouseLeave={() => setNoteHover(null)}
-                        draggable
+                        // HTML drag on touch hijacks the long-press that opens
+                        // this row's menu (rename / move / delete).
+                        draggable={!coarse}
+                        data-touch-row
                         onDragStart={(e) => {
                           // Dropping a note into an editor should link it, so
                           // carry the wikilink as the plain-text payload and a
@@ -884,7 +889,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                         }}
                         onKeyDown={(e) => e.key === "Enter" && onOpenNote(row.id, row.title, { inCurrentTab: true })}
                         className={cn(
-                          "flex h-[26px] cursor-default items-center rounded px-2 text-[13px]",
+                          "flex h-[26px] cursor-default items-center rounded px-2 text-[13px] select-none max-md:h-10 max-md:text-[15px]",
                           activeNoteId === row.id
                             ? "bg-ob-active text-ob-text"
                             : "text-ob-muted hover:bg-ob-hover hover:text-ob-text",

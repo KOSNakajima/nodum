@@ -799,3 +799,59 @@ body {
   background: color-mix(in oklab, var(--ob-accent) 20%, transparent);
   color: var(--ob-accent);
 }
+
+/* ── Phones & touch ───────────────────────────────────────────────────────
+   iOS zooms the page into any focused field whose text is under 16px, and
+   never zooms back out. Unlayered, so it beats the 12–13px utilities the
+   desktop chrome uses; fields that are deliberately larger opt out. */
+@media (max-width: 767px) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [data-keep-font]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  /* The editor is a contenteditable — same zoom rule, same floor. */
+  [data-print-root] {
+    font-size: max(16px, var(--editor-font-size, 16px)) !important;
+  }
+}
+
+@media (pointer: coarse) {
+  /* Long-press on a row is the context menu, not iOS's link/image callout. */
+  [role="treeitem"],
+  [role="tab"],
+  [data-touch-row] {
+    -webkit-touch-callout: none;
+  }
+  button,
+  [role="button"],
+  [role="tab"],
+  [role="treeitem"],
+  a {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Slide-in drawers / bottom sheets (mobile). */
+@keyframes nodum-in-left { from { transform: translateX(-100%); } }
+@keyframes nodum-in-right { from { transform: translateX(100%); } }
+@keyframes nodum-in-bottom { from { transform: translateY(100%); } }
+@keyframes nodum-out-left { to { transform: translateX(-100%); } }
+@keyframes nodum-out-right { to { transform: translateX(100%); } }
+@keyframes nodum-out-bottom { to { transform: translateY(100%); } }
+.nodum-sheet[data-side="left"][data-state="open"] { animation: nodum-in-left 220ms cubic-bezier(0.32, 0.72, 0, 1); }
+.nodum-sheet[data-side="right"][data-state="open"] { animation: nodum-in-right 220ms cubic-bezier(0.32, 0.72, 0, 1); }
+.nodum-sheet[data-side="bottom"][data-state="open"] { animation: nodum-in-bottom 240ms cubic-bezier(0.32, 0.72, 0, 1); }
+.nodum-sheet[data-side="left"][data-state="closed"] { animation: nodum-out-left 160ms ease-in; }
+.nodum-sheet[data-side="right"][data-state="closed"] { animation: nodum-out-right 160ms ease-in; }
+.nodum-sheet[data-side="bottom"][data-state="closed"] { animation: nodum-out-bottom 180ms ease-in; }
+
+/* Menu rows and list options at finger size (Radix menus, cmdk lists). */
+@media (pointer: coarse) {
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  [role="menuitemradio"],
+  [cmdk-item] {
+    min-height: 44px;
+  }
+}

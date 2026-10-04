@@ -31,13 +31,15 @@ test.describe("first-run follow-ups", () => {
     expect(box).toBeTruthy();
     expect(Math.abs(box!.x + box!.width / 2 - 700)).toBeLessThan(4);
 
-    // Narrow: first run never shows the tour on a phone — but Settings can
-    // re-open it, and then the card never overflows the viewport, so × stays
-    // reachable.
+    // Narrow: first run never shows the tour on a phone, and phone Settings
+    // drops its button (the tour points at desktop chrome) — but the command
+    // palette can still re-open it, and then the card never overflows the
+    // viewport, so × stays reachable.
     await page.setViewportSize({ width: 375, height: 700 });
     await expect(tour).toHaveCount(0);
-    await page.keyboard.press("ControlOrMeta+,");
-    await page.getByRole("button", { name: "Show the tour again" }).dispatchEvent("click");
+    await page.keyboard.press("ControlOrMeta+p");
+    await page.getByPlaceholder("Select a command...").fill("Show the tour again");
+    await page.keyboard.press("Enter");
     await expect(card).toBeVisible();
     await expect.poll(async () => (await card.boundingBox())!.width, { timeout: 3_000 }).toBeLessThanOrEqual(351);
     const close = card.getByRole("button", { name: "Close tour" });

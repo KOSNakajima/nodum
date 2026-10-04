@@ -49,19 +49,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # NOT a `services:` container: the official MinIO image needs the
-      # `server /data` command and service containers cannot set one. The
-      # previous bitnami/minio:2025.9.7 pin was deleted from the public Docker
-      # Hub catalogue, which failed every run at container-init time. In
-      # September 2026 `minio/minio` went the same way, so the pull comes
-      # from quay.io, which is where MinIO actually publishes. Do not move
-      # it back to Docker Hub.
+      # NOT a `services:` container: the MinIO image needs the `server /data`
+      # command and service containers cannot set one. bitnami/minio was
+      # deleted from Docker Hub earlier, failing every run at container-init.
+      #
+      # Chainguard's build of the MinIO server (same binary, same `server /data`
+      # and MINIO_ROOT_* contract), pinned by digest. MinIO's own images are
+      # gone from both registries: Docker Hub `minio/minio` was deleted in
+      # September 2026 and quay.io/minio/minio started answering 401 in
+      # October 2026. Neither comes back as an option.
       - name: Start MinIO
         run: |
           docker run -d --name minio -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z server /data
+            cgr.dev/chainguard/minio@sha256:4cf4831a2bbcf13ddca09c1cbcc9faff716dd3c4247e0babc32864b8ee8e0034 server /data
           for _ in $(seq 1 60); do
             if curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null; then
               echo "MinIO ready"; exit 0

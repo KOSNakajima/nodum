@@ -286,6 +286,11 @@ interface WorkspaceState {
   /** The onboarding tour, re-opened on request (first run opens it itself). */
   tourOpen: boolean;
   leftPane: "files" | "search" | "bookmarks";
+  /** Phone layout only: which slide-in drawer is showing. Picking a sidebar
+   *  pane from anywhere (palette, a tag in the right drawer) brings its drawer
+   *  up — on a phone the pane is otherwise invisible. Ignored on desktop. */
+  mobileDrawer: "left" | "right" | null;
+  setMobileDrawer: (drawer: "left" | "right" | null) => void;
   /** One-shot query seed for the search pane (tag pane click-to-search). */
   searchSeed: string | null;
 
@@ -407,6 +412,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       syncNoticeClosed: {},
       tourOpen: false,
       leftPane: "files",
+      mobileDrawer: null,
       searchSeed: null,
 
       setActiveVault: (vaultId) => {
@@ -652,7 +658,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
       toggleLeftSidebar: () => set({ leftSidebarOpen: !get().leftSidebarOpen }),
       toggleRightSidebar: () => set({ rightSidebarOpen: !get().rightSidebarOpen }),
-      setRightPane: (pane) => set({ rightPane: pane }),
+      setRightPane: (pane) => set({ rightPane: pane, mobileDrawer: "right" }),
       toggleRibbon: () => set({ ribbonVisible: !get().ribbonVisible }),
       setLeftWidth: (w) => set({ leftWidth: Math.min(Math.max(w, 200), 480) }),
       setRightWidth: (w) => set({ rightWidth: Math.min(Math.max(w, 220), 520) }),
@@ -794,7 +800,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }),
       setSettingsOpen: (open) => set({ settingsOpen: open, settingsTab: open ? get().settingsTab : null }),
       setTourOpen: (open) => set({ tourOpen: open }),
-      setLeftPane: (pane) => set({ leftPane: pane }),
+      setLeftPane: (pane) => set({ leftPane: pane, mobileDrawer: "left" }),
+      setMobileDrawer: (drawer) => set({ mobileDrawer: drawer }),
       setSearchSeed: (q) => set({ searchSeed: q }),
     }),
     {

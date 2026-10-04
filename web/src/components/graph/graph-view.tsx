@@ -452,6 +452,9 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
   // highlighted connection paths, and the mirrors let handlers layer correctly.
   const accentLinkRef = useRef<[number, number, number, number]>([1, 1, 1, 1]);
   const hoveredIndexRef = useRef<number | null>(null);
+  // Cosmos's own hovered point (mirrors over/out). Touch clears hoveredIndexRef
+  // on lift, but cosmos keeps the point, so re-touching it fires no new "over".
+  const cosmosHoverRef = useRef<number | null>(null);
   const searchSetRef = useRef<Set<number> | null>(null);
   const forceLabelsRef = useRef<Set<number> | null>(null);
   // Zoom-adaptive sizing: last applied node-size scale so we only push a new
@@ -916,6 +919,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
           setHovered({ title: node.title, x: event.offsetX, y: event.offsetY });
         }
         hoveredIndexRef.current = index;
+        cosmosHoverRef.current = index;
         // Bright: the node + its direct neighbours; their names show, their
         // connection paths light up, everything else dims.
         const bright = new Set<number>([index]);
@@ -925,6 +929,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
       onPointMouseOut: () => {
         setHovered(null);
         hoveredIndexRef.current = null;
+        cosmosHoverRef.current = null;
         restoreResting();
       },
     });
@@ -958,8 +963,10 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
       driftRafRef.current = requestAnimationFrame(step);
     };
 
-    const onDown = () => {
-      const idx = hoveredIndexRef.current;
+    const onDown = (e: PointerEvent) => {
+      // cosmos picks synchronously on pointerdown (its canvas listener runs
+      // before this bubbled one), so touch gets hover + drag without a prior move
+      const idx = hoveredIndexRef.current ?? (e.pointerType !== "mouse" ? cosmosHoverRef.current : null);
       if (idx !== null) {
         draggingIndexRef.current = idx;
         const bright = new Set<number>([idx]);
@@ -973,7 +980,14 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
       graph.unpause();
       graph.render(0.05);
     };
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
+      // Touch has no hover-out: drop the tooltip + highlight when the finger lifts.
+      // (The tap's click still opens the node — cosmos keeps its own hovered point.)
+      if (e.pointerType !== "mouse") {
+        hoveredIndexRef.current = null;
+        setHovered(null);
+        if (draggingIndexRef.current === null) restoreResting();
+      }
       if (draggingIndexRef.current !== null) {
         draggingIndexRef.current = null;
         cancelAnimationFrame(driftRafRef.current);
@@ -984,6 +998,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
     };
     container.addEventListener("pointerdown", onDown);
     container.addEventListener("pointerup", onUp);
+    container.addEventListener("pointercancel", onUp);
 
     // Scratch for the label pass, reused every frame: an overlay of a thousand
     // names must not allocate sixty times a second.
@@ -1180,6 +1195,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
       if (pauseTimerRef.current) clearTimeout(pauseTimerRef.current);
       container.removeEventListener("pointerdown", onDown);
       container.removeEventListener("pointerup", onUp);
+      container.removeEventListener("pointercancel", onUp);
       cancelAnimationFrame(rafRef.current);
       cancelAnimationFrame(dimRafRef.current);
       cancelAnimationFrame(enterRafRef.current);
@@ -1614,7 +1630,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
 
   return (
     <div className="relative h-full w-full bg-ob-bg">
-      <div ref={containerRef} className="absolute inset-0" />
+      <div ref={containerRef} className="absolute inset-0 touch-none" />
 
       {hovered && (
         <div
@@ -1630,7 +1646,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
         <div className="absolute top-3 right-3 z-10 flex items-center gap-1">
           {/* Search: an icon that expands into a field, so the canvas stays clean */}
           {searchOpen ? (
-            <div className="flex h-8 items-center gap-1.5 rounded-md border border-ob-border bg-ob-sidebar/95 pr-1 pl-2 shadow-lg backdrop-blur focus-within:border-ob-accent">
+            <div className="flex h-8 items-center gap-1.5 rounded-md border border-ob-border bg-ob-sidebar/95 pr-1 pl-2 max-md:h-10 shadow-lg backdrop-blur focus-within:border-ob-accent">
               <Search className="size-3.5 shrink-0 text-ob-faint" strokeWidth={1.75} />
               <input
                 autoFocus
@@ -1643,7 +1659,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
                 }}
                 placeholder="Search files… (path: tag: text)"
                 aria-label="Search graph"
-                className="h-7 w-52 bg-transparent text-[12px] text-ob-text outline-none placeholder:text-ob-faint"
+                className="h-7 w-52 bg-transparent text-[12px] text-ob-text outline-none placeholder:text-ob-faint max-md:h-9 max-md:w-28 max-md:text-[16px]"
               />
               <button
                 type="button"
@@ -1652,7 +1668,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
                   setSearchQuery("");
                   setSearchOpen(false);
                 }}
-                className="flex size-5 shrink-0 items-center justify-center rounded text-ob-faint hover:text-ob-text"
+                className="flex size-5 shrink-0 items-center justify-center rounded text-ob-faint hover:text-ob-text max-md:size-8"
               >
                 <X className="size-3.5" strokeWidth={2} />
               </button>
@@ -1663,7 +1679,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
               aria-label="Search graph"
               onClick={() => setSearchOpen(true)}
               className={cn(
-                "flex size-8 items-center justify-center rounded-md border border-ob-border bg-ob-sidebar/95 shadow-lg backdrop-blur transition-colors hover:text-ob-text",
+                "flex size-8 items-center justify-center rounded-md border max-md:size-10 border-ob-border bg-ob-sidebar/95 shadow-lg backdrop-blur transition-colors hover:text-ob-text",
                 // an active query keeps the icon accented while collapsed
                 searchQuery ? "text-ob-accent" : "text-ob-muted",
               )}
@@ -1675,7 +1691,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
             type="button"
             aria-label="Re-arrange graph into a sphere"
             onClick={rearrange}
-            className="flex size-8 items-center justify-center rounded-md border border-ob-border bg-ob-sidebar/95 text-ob-muted shadow-lg backdrop-blur transition-colors hover:text-ob-text"
+            className="flex size-8 items-center justify-center rounded-md border max-md:size-10 border-ob-border bg-ob-sidebar/95 text-ob-muted shadow-lg backdrop-blur transition-colors hover:text-ob-text"
           >
             <Orbit className="size-4" strokeWidth={1.75} />
           </button>
@@ -1683,7 +1699,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
             type="button"
             aria-label="Reset graph settings"
             onClick={resetToDefaults}
-            className="flex size-8 items-center justify-center rounded-md border border-ob-border bg-ob-sidebar/95 text-ob-muted shadow-lg backdrop-blur transition-colors hover:text-ob-text"
+            className="flex size-8 items-center justify-center rounded-md border max-md:size-10 border-ob-border bg-ob-sidebar/95 text-ob-muted shadow-lg backdrop-blur transition-colors hover:text-ob-text"
           >
             <RotateCcw className="size-4" strokeWidth={1.75} />
           </button>
@@ -1692,7 +1708,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
               <button
                 type="button"
                 aria-label="Graph settings"
-                className="flex size-8 items-center justify-center rounded-md border border-ob-border bg-ob-sidebar/95 text-ob-muted shadow-lg backdrop-blur transition-colors hover:text-ob-text"
+                className="flex size-8 items-center justify-center rounded-md border max-md:size-10 border-ob-border bg-ob-sidebar/95 text-ob-muted shadow-lg backdrop-blur transition-colors hover:text-ob-text"
               >
                 <Settings2 className="size-4" strokeWidth={1.75} />
               </button>
@@ -1701,7 +1717,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
               align="end"
               sideOffset={6}
               onOpenAutoFocus={(e) => e.preventDefault()}
-              className="max-h-[70vh] w-64 overflow-y-auto border-ob-border bg-ob-sidebar p-3 text-[12px]"
+              className="max-h-[70vh] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain border-ob-border bg-ob-sidebar p-3 text-[12px]"
             >
         {/* Search lives in the floating control cluster (magnifier icon), not here */}
         <p className="pb-1.5 text-[11px] font-medium tracking-wide text-ob-faint uppercase">Filters</p>
@@ -1772,7 +1788,7 @@ export function GraphView({ vaultId, centerNoteId, depth = 1, compact = false, f
               onChange={(e) =>
                 setGroupsDraft(groups.map((x, j) => (j === i ? { ...x, query: e.target.value } : x)))
               }
-              className="h-6 min-w-0 flex-1 rounded border border-ob-border bg-ob-bg px-1.5 text-[12px] text-ob-text outline-none placeholder:text-ob-faint"
+              className="h-6 min-w-0 flex-1 rounded border border-ob-border bg-ob-bg px-1.5 text-[12px] text-ob-text outline-none placeholder:text-ob-faint max-md:h-8 max-md:text-[16px]"
             />
             <button
               type="button"
