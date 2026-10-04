@@ -27,6 +27,10 @@ celery_app.conf.update(
     task_time_limit=300,
     task_soft_time_limit=240,
     worker_prefetch_multiplier=1,
+    # structlog prints to stdout, which the worker re-logs at WARNING by
+    # default — every info event read as "WARNING/ForkPoolWorker". The event
+    # line carries its own level; this only stops the false alarm around it.
+    worker_redirect_stdouts_level="INFO",
     # Beat schedule (worker runs with -B): nightly session pruning
     beat_schedule={
         "prune-sessions-nightly": {

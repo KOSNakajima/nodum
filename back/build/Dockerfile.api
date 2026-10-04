@@ -32,10 +32,21 @@ RUN uv sync --no-dev --no-install-project --frozen
 # ── Development ───────────────────────────────────────────
 FROM builder AS development
 
+# The venv lives OUTSIDE /app: dev bind-mounts ../back over /app, which would
+# hide an in-tree .venv (and expose the host's). Kept in the image rather than a
+# named volume, so rebuilding the image is what refreshes it — a volume is
+# filled once and then goes stale against every later lock change.
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+
 RUN uv sync --no-install-project --frozen
 
 # Copy application code (overridden by volume mount in dev)
 COPY . .
+
+# Install the project itself now, so its build backend (hatchling) is fetched
+# at build time. Left to `uv run` on container start, every boot needed PyPI,
+# and a DNS blip crash-looped the api and the worker.
+RUN uv sync --frozen
 
 RUN chmod +x ./scripts/pre-start.sh
 
