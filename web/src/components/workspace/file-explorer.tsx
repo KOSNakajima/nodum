@@ -47,6 +47,7 @@ import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { type ExplorerSort, useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { PickerDialog } from "./picker-dialog";
 import { cn } from "@/lib/utils";
+import { isComposing } from "@/lib/ime";
 
 const ROW_HEIGHT = 26;
 const ROW_HEIGHT_TOUCH = 40;
@@ -261,7 +262,7 @@ function TagSubmenu({
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               e.stopPropagation();
-              if (e.key === "Enter" && draft.trim()) {
+              if (e.key === "Enter" && !isComposing(e) && draft.trim()) {
                 onAdd(draft);
                 setDraft("");
               }
@@ -1046,6 +1047,7 @@ function InlineInput({
       onChange={(e) => onChange(e.target.value)}
       onBlur={onSubmit}
       onKeyDown={(e) => {
+        if (isComposing(e)) return;
         if (e.key === "Enter") onSubmit();
         if (e.key === "Escape") onCancel();
       }}

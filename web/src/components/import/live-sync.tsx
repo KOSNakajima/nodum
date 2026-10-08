@@ -39,6 +39,7 @@ import {
 } from "@/lib/api/endpoints";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
+import { isComposing } from "@/lib/ime";
 
 /** History windows offered as one-click chips. 0 is "future only". */
 const WINDOWS: { label: string; days: number }[] = [
@@ -322,7 +323,7 @@ export function SyncSetup({
                 value={labelDraft}
                 onChange={(event) => setLabelDraft(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && labelDraft.trim()) {
+                  if (event.key === "Enter" && !isComposing(event) && labelDraft.trim()) {
                     event.preventDefault();
                     setLabels((current) => [...new Set([...current, labelDraft.trim()])]);
                     setLabelDraft("");

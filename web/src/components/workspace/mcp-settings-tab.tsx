@@ -20,6 +20,7 @@ import { mcpApi } from "@/lib/api/endpoints";
 import { DOCS_URL } from "@/lib/app-meta";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
+import { isComposing } from "@/lib/ime";
 
 const TOKEN_PLACEHOLDER = "<your token>";
 
@@ -159,7 +160,7 @@ export function McpSettingsTab() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !create.isPending) create.mutate();
+              if (e.key === "Enter" && !isComposing(e) && !create.isPending) create.mutate();
             }}
             className="h-8"
           />

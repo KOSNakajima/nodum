@@ -36,6 +36,7 @@ import { vaultApi } from "@/lib/api/endpoints";
 import type { Vault } from "@/lib/api/types";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
+import { isComposing } from "@/lib/ime";
 
 export function VaultSwitcher({ vaultId, vaultName }: { vaultId: string; vaultName: string }) {
   const queryClient = useQueryClient();
@@ -167,7 +168,7 @@ export function NewVaultDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && name.trim()) create.mutate();
+                if (e.key === "Enter" && !isComposing(e) && name.trim()) create.mutate();
               }}
             />
             <DialogFooter>

@@ -10,6 +10,7 @@ import { confirmDelete } from "./confirm-dialog";
 import { canvasApi } from "@/lib/api/endpoints";
 import { toastError } from "@/lib/stores/toast-store";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
+import { isComposing } from "@/lib/ime";
 
 export function CanvasesSection({ vaultId }: { vaultId: string }) {
   const queryClient = useQueryClient();
@@ -64,6 +65,7 @@ export function CanvasesSection({ vaultId }: { vaultId: string }) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "Enter" && name.trim()) create.mutate(name.trim());
             if (e.key === "Escape") setCreating(false);
           }}
