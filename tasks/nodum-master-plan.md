@@ -225,6 +225,19 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-08: the assistant can open web pages** (`feature/4.fetch-url_kosnakajima_081020261744`).
+  - `fetch_url` tool → `services/web_fetch.py`: page → markdown via the
+    importers' converter, chrome stripped, 2 MB / 12k-char caps, meta charset.
+  - SSRF: `url_guard.resolve_public_address` resolves once and the request
+    dials that address (Host + `sni_hostname` keep TLS honest), manual
+    redirects re-checked per hop, `trust_env=False`.
+  - Exfiltration: `ai_tools.url_is_grounded` — only URLs present verbatim in
+    user messages, the open note or this turn's tool results. Closes the
+    "GET carries vault text" variant of the audit's injection finding; the
+    remote-`<img>` variant in ReadingView is still open.
+  - UI: status "Opening <host>…"; `{"kind": "visited", url}` actions render
+    as external-link chips. Gates: unit 322, integration 297, `make verify`.
+
 - **2026-10-08: first self-host on a fresh machine — three fixes**
   (`hotfix/1.minio-compose_kosnakajima_081020261652` →
   `bug/2.openai-max-completion-tokens_kosnakajima_081020261652` →
