@@ -225,6 +225,24 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-08: first self-host on a fresh machine — three fixes**
+  (`hotfix/1.minio-compose_kosnakajima_081020261652` →
+  `bug/2.openai-max-completion-tokens_kosnakajima_081020261652` →
+  `bug/3.ime-enter-submit_kosnakajima_081020261652`).
+  - *MinIO in the compose stacks.* aab9bc7 moved CI and e2e to Chainguard,
+    but `deploy/docker-compose.yml` was still on quay.io, so
+    `compose.sh {dev,staging,prod} up` died pulling MinIO. Same digest as CI.
+  - *Azure OpenAI / GPT-5.* The openai adapter sent `max_tokens`, which
+    reasoning models reject with a 400 that `_safe_error` reduces to "The
+    provider rejected the request". It now sends `max_completion_tokens`
+    (qwen keeps `max_tokens`). Azure works as the openai provider with base
+    URL `https://<resource>.openai.azure.com/openai/v1` and the deployment
+    name as the model — verified against gpt-5.4.
+  - *IME.* The Enter that confirms a Japanese conversion submitted the AI
+    chat mid-sentence; every Enter-to-submit input had the same bug.
+    `lib/ime.ts` `isComposing()` (keyCode 229 covers Safari). Gates:
+    `make verify` green.
+
 - **2026-10-05: Agentation works at phone widths** (`bug/1.agentation-mobile_maqbool_051020260040`).
   - The dev toolbar had been hidden below 768px because its default corner
     (20px from the bottom) covered the bottom nav and the keyboard toolbar.
