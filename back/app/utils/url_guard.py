@@ -67,18 +67,34 @@ async def assert_safe_url(url: str, *, allow_private: bool) -> None:
     if allow_private:
         return
 
-    try:
-        infos = await asyncio.get_running_loop().getaddrinfo(
-            host, parts.port or (443 if parts.scheme == "https" else 80), proto=socket.IPPROTO_TCP
-        )
-    except OSError as exc:
-        raise UnsafeUrlError("Endpoint host could not be resolved.") from exc
-
+    addresses = await _resolve(host, parts.port or (443 if parts.scheme == "https" else 80))
     # Every answer must be acceptable: one public A record alongside a private
     # one would otherwise be enough to get through.
-    for info in infos:
-        if _is_forbidden(str(info[4][0])):
-            raise UnsafeUrlError(
-                "Endpoint resolves to a private or reserved address. "
-                "Set AI_ALLOW_PRIVATE_BASE_URLS=true to allow self-hosted endpoints."
-            )
+    if any(_is_forbidden(address) for address in addresses):
+        raise UnsafeUrlError(
+            "Endpoint resolves to a private or reserved address. "
+            "Set AI_ALLOW_PRIVATE_BASE_URLS=true to allow self-hosted endpoints."
+        )
+
+
+async def _resolve(host: str, port: int) -> list[str]:
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        raise UnsafeUrlError("Host could not be resolved.") from exc
+    return [str(info[4][0]) for info in infos]
+
+
+async def resolve_public_address(host: str, port: int) -> str:
+    """Resolve `host` once and return the public address to connect to.
+
+    For fetching pages the AI asked for, checking a name and then letting the
+    HTTP client resolve it again is not enough: a DNS answer with a zero TTL
+    can be public for the check and 127.0.0.1 for the connection. The caller
+    connects to the address returned here instead, so what was checked is what
+    gets dialled. Every answer must be public, as in `assert_safe_url`.
+    """
+    addresses = await _resolve(host, port)
+    if not addresses or any(_is_forbidden(address) for address in addresses):
+        raise UnsafeUrlError("That address is on a private or reserved network.")
+    return addresses[0]

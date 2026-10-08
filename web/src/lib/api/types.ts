@@ -251,12 +251,11 @@ export interface AIStatus {
   providers: AIProviderInfo[];
 }
 
-/** A change the assistant made to the vault during a turn. */
-export interface AIAction {
-  kind: "created" | "updated";
-  title: string;
-  note_id: string;
-}
+/** Something the assistant did during a turn: a vault change, or a web page
+ * it opened with fetch_url. */
+export type AIAction =
+  | { kind: "created" | "updated"; title: string; note_id: string }
+  | { kind: "visited"; title: string; url: string };
 
 export interface AIChatReply {
   reply: string;
