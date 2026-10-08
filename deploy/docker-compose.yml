@@ -70,10 +70,13 @@ services:
       - app_network
 
   # ── MinIO (S3-compatible storage for attachments) ───────
-  # Pulled from quay.io, not Docker Hub: MinIO deleted the `minio/minio`
-  # Hub repository in September 2026 and it now 401s for every tag.
+  # Chainguard's build, pinned by digest — the same image CI and the e2e stack
+  # run (ci-backend.yml, e2e-stack.sh). MinIO's own images are gone: Docker Hub
+  # `minio/minio` was deleted in September 2026 and quay.io/minio/minio has
+  # answered 401 since October 2026. Same entrypoint, and it ships `mc` for the
+  # healthcheck below.
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: cgr.dev/chainguard/minio@sha256:4cf4831a2bbcf13ddca09c1cbcc9faff716dd3c4247e0babc32864b8ee8e0034
     container_name: nodum-minio
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
