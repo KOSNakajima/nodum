@@ -17,7 +17,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, FilePlus2, History, Plus, Send, Sparkles, Trash2 } from "lucide-react";
+import { Check, FilePlus2, Globe, History, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { ReadingView } from "@/components/editor/reading-view";
@@ -141,7 +141,7 @@ export function AiChatPane({
         // Once the stored transcript includes this turn, the local copy would
         // double it.
         .then(() => setPending([]));
-      if ((data.actions ?? []).length > 0) {
+      if ((data.actions ?? []).some((action) => action.kind !== "visited")) {
         void queryClient.invalidateQueries({ queryKey: ["tree", vaultId] });
         void queryClient.invalidateQueries({ queryKey: ["graph", vaultId] });
         void queryClient.invalidateQueries({ queryKey: ["backlinks", vaultId] });
@@ -298,21 +298,38 @@ export function AiChatPane({
                 <p className="whitespace-pre-wrap">{message.content}</p>
               )}
             </div>
-            {/* Every vault change is shown, never silent — and it is stored with
-                the message, so a restored thread still shows what was written. */}
-            {(message.actions ?? []).map((action: AIAction) => (
-              <button
-                key={`${action.note_id}-${action.kind}`}
-                type="button"
-                onClick={() => onOpenNote(action.note_id, action.title)}
-                className="flex w-full items-center gap-1.5 rounded border border-ob-border px-2 py-1 text-left text-[12px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
-              >
-                <FilePlus2 className="size-3.5 shrink-0 text-ob-accent" strokeWidth={2} />
-                <span className="truncate">
-                  {action.kind === "created" ? "Created" : "Updated"} {action.title}
-                </span>
-              </button>
-            ))}
+            {/* Every vault change and every page visited is shown, never
+                silent — and it is stored with the message, so a restored
+                thread still shows what was written and where it came from. */}
+            {(message.actions ?? []).map((action: AIAction, index) =>
+              action.kind === "visited" ? (
+                <a
+                  key={`${index}-${action.url}`}
+                  // Only ever http(s): the server fetched it, but the link is
+                  // still rendered from stored data.
+                  href={/^https?:\/\//i.test(action.url) ? action.url : undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={action.url}
+                  className="flex w-full items-center gap-1.5 rounded border border-ob-border px-2 py-1 text-left text-[12px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+                >
+                  <Globe className="size-3.5 shrink-0 text-ob-accent" strokeWidth={2} />
+                  <span className="truncate">Visited {action.title}</span>
+                </a>
+              ) : (
+                <button
+                  key={`${action.note_id}-${action.kind}`}
+                  type="button"
+                  onClick={() => onOpenNote(action.note_id, action.title)}
+                  className="flex w-full items-center gap-1.5 rounded border border-ob-border px-2 py-1 text-left text-[12px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+                >
+                  <FilePlus2 className="size-3.5 shrink-0 text-ob-accent" strokeWidth={2} />
+                  <span className="truncate">
+                    {action.kind === "created" ? "Created" : "Updated"} {action.title}
+                  </span>
+                </button>
+              ),
+            )}
           </div>
         ))}
         {send.isPending && (
