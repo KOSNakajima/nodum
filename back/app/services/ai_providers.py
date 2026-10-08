@@ -119,6 +119,19 @@ def _safe_error(provider: str, response: httpx.Response) -> ProviderError:
     return ProviderError(f"The provider rejected the request ({response.status_code}).")
 
 
+def _token_limit(provider: str, max_tokens: int) -> dict[str, int]:
+    """The output cap, under the name this chat-completions endpoint accepts.
+
+    OpenAI deprecated `max_tokens` for `max_completion_tokens`, and reasoning
+    models (o-series, GPT-5) — including Azure OpenAI deployments reached
+    through its v1 endpoint — reject the old name with a 400. Qwen's
+    compatible mode only documents `max_tokens`, so it keeps that.
+    """
+    if provider == "openai":
+        return {"max_completion_tokens": max_tokens}
+    return {"max_tokens": max_tokens}
+
+
 @dataclass
 class ToolCall:
     """A provider-neutral request to run one of our vault tools."""
@@ -225,7 +238,7 @@ async def chat(
         chat_messages = ([{"role": "system", "content": system}] if system else []) + messages
         response = await client.post(
             f"{url_root}/chat/completions",
-            json={"model": model, "messages": chat_messages, "max_tokens": max_tokens},
+            json={"model": model, "messages": chat_messages, **_token_limit(provider, max_tokens)},
             headers={"Authorization": f"Bearer {api_key}"},
         )
         if response.status_code >= 400:
@@ -319,7 +332,7 @@ async def turn(
             json={
                 "model": model,
                 "messages": ([{"role": "system", "content": system}] if system else []) + messages,
-                "max_tokens": max_tokens,
+                **_token_limit(provider, max_tokens),
                 "tools": _tools_for(provider, tools),
             },
             headers={"Authorization": f"Bearer {api_key}"},
@@ -506,7 +519,7 @@ async def stream_turn(
             json={
                 "model": model,
                 "messages": ([{"role": "system", "content": system}] if system else []) + messages,
-                "max_tokens": max_tokens,
+                **_token_limit(provider, max_tokens),
                 "tools": _tools_for(provider, tools),
                 "stream": True,
             },

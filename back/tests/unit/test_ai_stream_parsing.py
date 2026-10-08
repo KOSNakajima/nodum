@@ -161,3 +161,38 @@ async def test_provider_error_status_is_mapped_not_leaked(monkeypatch: pytest.Mo
     with pytest.raises(ai_providers.ProviderError) as exc:
         await _collect(provider="openai", api_key=FAKE_KEY, model="m", messages=[], system="", tools=[])
     assert "rejected the API key" in str(exc.value) and "sk-secret" not in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected", "absent"),
+    [
+        # Reasoning models (and Azure OpenAI's v1 endpoint) 400 on max_tokens.
+        ("openai", "max_completion_tokens", "max_tokens"),
+        ("qwen", "max_tokens", "max_completion_tokens"),
+    ],
+)
+async def test_chat_completions_output_cap_parameter(
+    monkeypatch: pytest.MonkeyPatch, provider: str, expected: str, absent: str
+) -> None:
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        seen.append(payload)
+        if payload.get("stream"):
+            return httpx.Response(200, content=_sse(["[DONE]"]), headers={"content-type": "text/event-stream"})
+        return httpx.Response(200, json={"choices": [{"message": {"role": "assistant", "content": "ok"}}]})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        ai_providers.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handler), **kw)
+    )
+    kw = {"provider": provider, "api_key": FAKE_KEY, "model": "m", "max_tokens": 16}
+    await ai_providers.chat(messages=[], **kw)
+    await ai_providers.turn(messages=[], system="", tools=[], **kw)
+    await _collect(messages=[], system="", tools=[], **kw)
+
+    assert len(seen) == 3
+    for payload in seen:
+        assert payload[expected] == 16
+        assert absent not in payload
