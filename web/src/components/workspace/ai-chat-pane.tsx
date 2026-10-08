@@ -35,6 +35,7 @@ import type { AIAction, AIConversationMessage, Note } from "@/lib/api/types";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { toastError } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
+import { isComposing } from "@/lib/ime";
 
 const CONTEXT_CHARS = 4_000;
 
@@ -348,8 +349,9 @@ export function AiChatPane({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            // Enter sends, Shift+Enter is a newline — chat convention.
-            if (e.key === "Enter" && !e.shiftKey) {
+            // Enter sends, Shift+Enter is a newline — chat convention. The
+            // Enter that confirms an IME conversion is neither.
+            if (e.key === "Enter" && !e.shiftKey && !isComposing(e)) {
               e.preventDefault();
               const text = draft.trim();
               if (text && !send.isPending) send.mutate(text);

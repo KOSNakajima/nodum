@@ -19,6 +19,7 @@ import { renderMathHTML } from "./math";
 import { EditableTableWidget, tableFocusPlugin } from "./table-widget";
 import { renderMermaidSvg } from "./mermaid";
 import { cachedHighlight, highlightToHtml } from "./shiki";
+import { isComposing } from "../ime";
 
 function selectionTouches(state: EditorState, from: number, to: number): boolean {
   return state.selection.ranges.some((r) => r.from <= to && r.to >= from);
@@ -141,7 +142,7 @@ class PropertiesWidget extends WidgetType {
           commit(next);
         };
         add.onkeydown = (e) => {
-          if (e.key === "Enter") commitAdd();
+          if (e.key === "Enter" && !isComposing(e)) commitAdd();
         };
         add.onblur = commitAdd;
         val.appendChild(add);
@@ -173,7 +174,7 @@ class PropertiesWidget extends WidgetType {
           commit(next);
         };
         input.onkeydown = (e) => {
-          if (e.key === "Enter") {
+          if (e.key === "Enter" && !isComposing(e)) {
             e.preventDefault();
             commitScalar();
           }

@@ -17,6 +17,7 @@ import { vaultApi } from "@/lib/api/endpoints";
 import type { Vault } from "@/lib/api/types";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
+import { isComposing } from "@/lib/ime";
 
 export function VaultsSection({ vaultId }: { vaultId: string }) {
   const queryClient = useQueryClient();
@@ -71,7 +72,7 @@ export function VaultsSection({ vaultId }: { vaultId: string }) {
               onChange={(e) => setNames((n) => ({ ...n, [v.id]: e.target.value }))}
               onBlur={() => submitRename(v)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                if (e.key === "Enter" && !isComposing(e)) (e.target as HTMLInputElement).blur();
               }}
               className={cn("h-8", v.id === vaultId && "border-ob-accent")}
             />

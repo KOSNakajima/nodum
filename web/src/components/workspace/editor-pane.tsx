@@ -36,6 +36,7 @@ import { useCoarsePointer, useIsMobile } from "@/lib/hooks/use-is-mobile";
 import { resolveNewNoteFolder } from "@/lib/new-note-location";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { cn } from "@/lib/utils";
+import { isComposing } from "@/lib/ime";
 
 export function EditorPane({
   vaultId,
@@ -566,7 +567,7 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
               else setTitle(note.title);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              if (e.key === "Enter" && !isComposing(e)) (e.target as HTMLInputElement).blur();
             }}
             className="mb-4 w-full bg-transparent text-[1.802em] leading-tight font-bold text-ob-text outline-none focus-visible:outline-none"
           />

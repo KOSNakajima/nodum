@@ -13,6 +13,7 @@ import { vaultApi } from "@/lib/api/endpoints";
 import type { Note, TreeItem } from "@/lib/api/types";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { cn } from "@/lib/utils";
+import { isComposing } from "@/lib/ime";
 
 /** Find the folder id for a slash-path, so a crumb can point at a real folder. */
 function folderIdForPath(items: TreeItem[], path: string, trail = ""): string | null {
@@ -108,6 +109,7 @@ export function NoteBreadcrumb({
           onChange={(e) => setEditing(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => {
+            if (isComposing(e)) return;
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             if (e.key === "Escape") setEditing(null);
           }}

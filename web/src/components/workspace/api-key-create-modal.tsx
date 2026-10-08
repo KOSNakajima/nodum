@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiKeysApi } from "@/lib/api/endpoints";
 import { toastError } from "@/lib/stores/toast-store";
+import { isComposing } from "@/lib/ime";
 
 const SCOPES = [
   { id: "read", label: "Read", hint: "list, read, search, graph" },
@@ -112,7 +113,7 @@ export function ApiKeyCreateModal({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !create.isPending && scopes.length > 0) create.mutate();
+                    if (e.key === "Enter" && !isComposing(e) && !create.isPending && scopes.length > 0) create.mutate();
                   }}
                   className="h-8"
                   autoFocus
