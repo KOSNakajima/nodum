@@ -17,6 +17,7 @@ import {
   FilePlus2,
   LocateFixed,
   FolderPlus,
+  GitFork,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,7 +42,7 @@ import { confirmDelete } from "./confirm-dialog";
 import { bookmarkApi, folderApi, noteApi, searchApi, vaultApi } from "@/lib/api/endpoints";
 import { setNoteHover } from "@/lib/graph/hover-bus";
 import { itemColorsOf, type ItemColorMap } from "@/lib/graph/item-colors";
-import { useIsMobile } from "@/lib/hooks/use-is-mobile";
+import { useCoarsePointer, useIsMobile } from "@/lib/hooks/use-is-mobile";
 import type { TreeItem, Vault } from "@/lib/api/types";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { type ExplorerSort, useWorkspaceStore } from "@/lib/stores/workspace-store";
@@ -288,6 +289,9 @@ function TagSubmenu({
 /** Searchable picker used by "Move file to…" (folders) and "Merge entire file
  *  with…" (notes). Keeps both flows to one keyboard-friendly dialog. */
 
+/** Where each vault's explorer was scrolled to — read back when it remounts. */
+const scrollMemory = new Map<string, number>();
+
 export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProps) {
   // Rows are virtualized: one scrolled out from under the pointer never fires
   // its mouseleave, so drop the hover when the list itself goes away.
@@ -298,7 +302,26 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
     queryKey: ["tree", vaultId],
     queryFn: () => vaultApi.tree(vaultId),
   });
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Collapsed folders live in the store, so they survive the explorer being
+  // unmounted (sidebar closed, phone drawer dismissed). Same Set-shaped API
+  // as the useState it replaced.
+  const openFolderGraph = useCallback((folderPath: string) => {
+    const store = useWorkspaceStore.getState();
+    store.setGraphFolder(folderPath);
+    store.openTab({ id: "graph", kind: "graph", title: "Graph view" });
+    store.setMobileDrawer(null);
+  }, []);
+  const collapsedIds = useWorkspaceStore((s) => s.explorerCollapsed[vaultId]);
+  const collapsed = useMemo(() => new Set(collapsedIds ?? []), [collapsedIds]);
+  const setCollapsed = useCallback(
+    (next: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+      const { explorerCollapsed, setExplorerCollapsed } = useWorkspaceStore.getState();
+      const prev = new Set(explorerCollapsed[vaultId] ?? []);
+      const value = typeof next === "function" ? next(prev) : next;
+      if (value !== prev) setExplorerCollapsed(vaultId, [...value]);
+    },
+    [vaultId],
+  );
   // The folder new notes/folders are created in. Clicking any row sets it, so
   // the toolbar buttons act "where you are" rather than always at the root.
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -441,12 +464,24 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
   );
 
   const isMobile = useIsMobile();
+  const coarse = useCoarsePointer();
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => (isMobile ? ROW_HEIGHT_TOUCH : ROW_HEIGHT),
     overscan: 12,
+    initialOffset: () => scrollMemory.get(vaultId) ?? 0,
   });
+
+  // Back to where the list was before it unmounted, once there are rows to
+  // scroll through (the tree loads after mount on a cold cache).
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    if (scrollRestored.current || rows.length === 0) return;
+    scrollRestored.current = true;
+    const top = scrollMemory.get(vaultId);
+    if (top) scrollRef.current?.scrollTo({ top });
+  }, [rows.length, vaultId]);
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["tree", vaultId] });
@@ -596,7 +631,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
         if (index >= 0) virtualizerRef.current.scrollToIndex(index, { align: "auto" });
       }),
     );
-  }, []);
+  }, [setCollapsed]);
 
   useEffect(() => {
     const reveal = (target: { kind: "note" | "folder"; id: string } | null) => {
@@ -691,7 +726,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           type="button"
           aria-label="New note"
           onClick={() => startCreate("note")}
-          className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
         >
           <FilePlus2 className="size-4" strokeWidth={1.75} />
         </button>
@@ -699,7 +734,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           type="button"
           aria-label="New folder"
           onClick={() => startCreate("folder")}
-          className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
         >
           <FolderPlus className="size-4" strokeWidth={1.75} />
         </button>
@@ -708,7 +743,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
             <button
               type="button"
               aria-label="Change sort order"
-              className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text"
+              className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text"
             >
               <ArrowUpDown className="size-4" strokeWidth={1.75} />
             </button>
@@ -733,7 +768,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           title="Show the open note, collapse everything else"
           onClick={revealActive}
           disabled={!activeNoteId}
-          className="ml-auto flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
+          className="ml-auto flex size-6 items-center max-md:size-10 justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
         >
           <LocateFixed className="size-4" strokeWidth={1.75} />
         </button>
@@ -743,7 +778,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
           title={allCollapsed ? "Expand all" : "Collapse all"}
           onClick={toggleAll}
           disabled={allFolderIds.length === 0}
-          className="flex size-6 items-center justify-center rounded text-ob-faint hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
+          className="flex size-6 items-center justify-center rounded text-ob-faint max-md:size-10 hover:bg-ob-hover hover:text-ob-text disabled:opacity-40 disabled:hover:bg-transparent"
         >
           {allCollapsed ? (
             <ChevronsUpDown className="size-4" strokeWidth={1.75} />
@@ -753,7 +788,11 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
         </button>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 pb-4">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto px-2 pb-4"
+        onScroll={(e) => scrollMemory.set(vaultId, e.currentTarget.scrollTop)}
+      >
         {!tree && <p className="px-2 py-1 text-[13px] text-ob-faint">Loading…</p>}
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
           {virtualizer.getVirtualItems().map((vRow) => {
@@ -766,7 +805,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                   top: 0,
                   left: 0,
                   width: "100%",
-                  height: ROW_HEIGHT,
+                  height: isMobile ? ROW_HEIGHT_TOUCH : ROW_HEIGHT,
                   transform: `translateY(${String(vRow.start)}px)`,
                 }}
               >
@@ -781,7 +820,8 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                           toggleFolder(row.id);
                         }}
                         onKeyDown={(e) => e.key === "Enter" && toggleFolder(row.id)}
-                        className="flex h-[26px] cursor-default items-center gap-1 rounded px-2 text-[13px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+                        data-touch-row
+                        className="group flex h-[26px] cursor-default items-center gap-1 rounded px-2 text-[13px] text-ob-muted select-none hover:bg-ob-hover hover:text-ob-text max-md:h-10 max-md:text-[15px]"
                         style={{ paddingLeft: 8 + row.depth * 14 }}
                       >
                         {row.collapsed ? (
@@ -801,6 +841,21 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                             {row.name}
                           </span>
                         )}
+                        {/* This folder's notes as their own graph. Always shown
+                            on touch; on hover with a mouse, like Obsidian's
+                            row actions. */}
+                        <button
+                          type="button"
+                          aria-label={`Graph of ${row.name}`}
+                          title="Show this folder's graph"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openFolderGraph(row.path);
+                          }}
+                          className="ml-auto flex size-5 shrink-0 items-center justify-center rounded text-ob-faint hover:bg-ob-active hover:text-ob-text max-md:size-9 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100"
+                        >
+                          <GitFork className="size-3.5 rotate-90 max-md:size-4" strokeWidth={1.75} />
+                        </button>
                       </div>
                     </ContextMenuTrigger>
                     <ContextMenuContent className="w-48">
@@ -862,7 +917,10 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                         // matching node) — see lib/graph/hover-bus.
                         onMouseEnter={() => setNoteHover({ id: row.id })}
                         onMouseLeave={() => setNoteHover(null)}
-                        draggable
+                        // HTML drag on touch hijacks the long-press that opens
+                        // this row's menu (rename / move / delete).
+                        draggable={!coarse}
+                        data-touch-row
                         onDragStart={(e) => {
                           // Dropping a note into an editor should link it, so
                           // carry the wikilink as the plain-text payload and a
@@ -884,7 +942,7 @@ export function FileExplorer({ vaultId, activeNoteId, onOpenNote }: ExplorerProp
                         }}
                         onKeyDown={(e) => e.key === "Enter" && onOpenNote(row.id, row.title, { inCurrentTab: true })}
                         className={cn(
-                          "flex h-[26px] cursor-default items-center rounded px-2 text-[13px]",
+                          "flex h-[26px] cursor-default items-center rounded px-2 text-[13px] select-none max-md:h-10 max-md:text-[15px]",
                           activeNoteId === row.id
                             ? "bg-ob-active text-ob-text"
                             : "text-ob-muted hover:bg-ob-hover hover:text-ob-text",

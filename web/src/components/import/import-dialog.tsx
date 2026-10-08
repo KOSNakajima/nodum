@@ -184,7 +184,9 @@ export function ImportDialog({
     >
       <DialogContent
         data-testid="import-dialog"
-        className="gap-0 overflow-clip border-ob-border bg-ob-sidebar p-0 sm:max-w-[820px]"
+        // Phones: a full-screen sheet (as Settings is) — the centred card was
+        // cut off mid-list with dead space under it.
+        className="gap-0 overflow-clip border-ob-border bg-ob-sidebar p-0 sm:max-w-[820px] max-md:inset-0 max-md:flex max-md:h-dvh max-md:w-full max-md:max-w-none! max-md:translate-0 max-md:flex-col max-md:rounded-none max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)]"
       >
         <DialogHeader className="border-b border-ob-border px-5 pt-4 pb-3">
           <DialogTitle className="flex items-center gap-2">
@@ -193,7 +195,7 @@ export function ImportDialog({
                 type="button"
                 onClick={reset}
                 aria-label="Back to all sources"
-                className="-ml-1 rounded p-1 text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+                className="-ml-1 rounded p-1 text-ob-muted hover:bg-ob-hover hover:text-ob-text max-md:p-2.5"
               >
                 <ArrowLeft className="size-4" />
               </button>
@@ -203,7 +205,7 @@ export function ImportDialog({
                 type="button"
                 onClick={reset}
                 aria-label="Back to all sources"
-                className="-ml-1 rounded p-1 text-ob-muted hover:bg-ob-hover hover:text-ob-text"
+                className="-ml-1 rounded p-1 text-ob-muted hover:bg-ob-hover hover:text-ob-text max-md:p-2.5"
               >
                 <ArrowLeft className="size-4" />
               </button>
@@ -226,7 +228,7 @@ export function ImportDialog({
           {picked && <p className="mt-1 text-[13px] text-ob-muted">{picked.blurb}</p>}
         </DialogHeader>
 
-        <div className="h-[min(560px,76vh)] overflow-y-auto">
+        <div className="h-[min(560px,76dvh)] overflow-y-auto overscroll-contain max-md:h-auto max-md:min-h-0 max-md:flex-1">
           {syncPick && !picked && (
             <SyncSetup vaultId={vaultId} provider={syncPick} onBack={reset} />
           )}
@@ -443,13 +445,15 @@ function LiveSyncSection({
                   className="nodum-import-card disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <span
-                    className="flex size-8 shrink-0 items-center justify-center rounded-md"
+                    // Same 40px tile as BrandIcon, so these rows' text lines up
+                    // with every other source's.
+                    className="flex size-10 shrink-0 items-center justify-center rounded-lg"
                     style={{ background: gmail ? "#ea433520" : "#4285f420" }}
                   >
                     {gmail ? (
-                      <Mail className="size-4" style={{ color: "#ea4335" }} />
+                      <Mail className="size-5" style={{ color: "#ea4335" }} />
                     ) : (
-                      <CalendarDays className="size-4" style={{ color: "#4285f4" }} />
+                      <CalendarDays className="size-5" style={{ color: "#4285f4" }} />
                     )}
                   </span>
                   <span className="min-w-0">

@@ -94,7 +94,7 @@ export function SyncProgressCard({ vaultId }: { vaultId: string }) {
 
   return (
     <div
-      className="fixed right-4 bottom-10 z-40 w-[300px] rounded-lg border border-ob-border bg-ob-sidebar shadow-lg"
+      className="fixed right-4 bottom-10 z-40 w-[300px] rounded-lg border border-ob-border bg-ob-sidebar shadow-lg max-md:right-2 max-md:bottom-[calc(64px+env(safe-area-inset-bottom))] max-md:w-[calc(100%-1rem)]"
       role="status"
       aria-label="Sync progress"
       data-testid="sync-progress"

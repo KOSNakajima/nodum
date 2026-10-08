@@ -286,6 +286,20 @@ interface WorkspaceState {
   /** The onboarding tour, re-opened on request (first run opens it itself). */
   tourOpen: boolean;
   leftPane: "files" | "search" | "bookmarks";
+  /** Phone layout only: which slide-in drawer is showing. Picking a sidebar
+   *  pane from anywhere (palette, a tag in the right drawer) brings its drawer
+   *  up — on a phone the pane is otherwise invisible. Ignored on desktop. */
+  mobileDrawer: "left" | "right" | null;
+  setMobileDrawer: (drawer: "left" | "right" | null) => void;
+  /** Collapsed explorer folders, per vault. In the store (and persisted) so
+   *  closing the sidebar or the phone drawer — which unmounts the explorer —
+   *  no longer re-expands everything. */
+  explorerCollapsed: Record<string, string[]>;
+  setExplorerCollapsed: (vaultId: string, folderIds: string[]) => void;
+  /** Graph scoped to one folder's notes (the folder graph button); null = the
+   *  whole vault. Transient — opening the graph any other way clears it. */
+  graphFolder: string | null;
+  setGraphFolder: (folderPath: string | null) => void;
   /** One-shot query seed for the search pane (tag pane click-to-search). */
   searchSeed: string | null;
 
@@ -374,6 +388,7 @@ type Persisted = Pick<
   | "splitOrientation"
   | "editorMode"
   | "explorerSort"
+  | "explorerCollapsed"
 >;
 
 export const useWorkspaceStore = create<WorkspaceState>()(
@@ -407,6 +422,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       syncNoticeClosed: {},
       tourOpen: false,
       leftPane: "files",
+      mobileDrawer: null,
+      explorerCollapsed: {},
+      graphFolder: null,
       searchSeed: null,
 
       setActiveVault: (vaultId) => {
@@ -652,7 +670,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
       toggleLeftSidebar: () => set({ leftSidebarOpen: !get().leftSidebarOpen }),
       toggleRightSidebar: () => set({ rightSidebarOpen: !get().rightSidebarOpen }),
-      setRightPane: (pane) => set({ rightPane: pane }),
+      setRightPane: (pane) => set({ rightPane: pane, mobileDrawer: "right" }),
       toggleRibbon: () => set({ ribbonVisible: !get().ribbonVisible }),
       setLeftWidth: (w) => set({ leftWidth: Math.min(Math.max(w, 200), 480) }),
       setRightWidth: (w) => set({ rightWidth: Math.min(Math.max(w, 220), 520) }),
@@ -794,7 +812,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         }),
       setSettingsOpen: (open) => set({ settingsOpen: open, settingsTab: open ? get().settingsTab : null }),
       setTourOpen: (open) => set({ tourOpen: open }),
-      setLeftPane: (pane) => set({ leftPane: pane }),
+      setLeftPane: (pane) => set({ leftPane: pane, mobileDrawer: "left" }),
+      setMobileDrawer: (drawer) => set({ mobileDrawer: drawer }),
+      setExplorerCollapsed: (vaultId, folderIds) =>
+        set((s) => ({ explorerCollapsed: { ...s.explorerCollapsed, [vaultId]: folderIds } })),
+      setGraphFolder: (folderPath) => set({ graphFolder: folderPath }),
       setSearchSeed: (q) => set({ searchSeed: q }),
     }),
     {
@@ -866,6 +888,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         splitOrientation: s.splitOrientation,
         editorMode: s.editorMode,
         explorerSort: s.explorerSort,
+        explorerCollapsed: s.explorerCollapsed,
       }),
     },
   ),

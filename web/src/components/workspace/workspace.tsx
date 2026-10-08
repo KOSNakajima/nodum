@@ -41,14 +41,16 @@ import { dailyApi, noteApi } from "@/lib/api/endpoints";
 import type { Vault } from "@/lib/api/types";
 import { api } from "@/lib/api/client";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
-import { Menu, PanelRight, Settings as SettingsIcon } from "lucide-react";
+import { Sheet } from "@/components/ui/sheet";
+import { MobileMenu, MobileNavBar, MobileTabSwitcher, MobileTopBar } from "./mobile-chrome";
 
 import { ConfirmDialog, confirmDelete } from "./confirm-dialog";
 import { DemoWorkspaceOffer } from "./demo-workspace-offer";
 import { OnboardingTour } from "./onboarding-tour";
 import { FONT_CHOICES, useEditorSettings, useUserPrefs } from "@/lib/hooks/use-editor-settings";
 import { useIsMobile } from "@/lib/hooks/use-is-mobile";
-import { resolveNewNoteFolder } from "@/lib/new-note-location";
+import { useVirtualKeyboard } from "@/lib/hooks/use-virtual-keyboard";
+import { createUntitledNote, resolveNewNoteFolder } from "@/lib/new-note-location";
 import { usePlugins } from "@/lib/plugins/use-plugins";
 import { useDocumentTitle } from "@/lib/hooks/use-document-title";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
@@ -101,8 +103,40 @@ export function Workspace({ vault }: { vault: Vault }) {
     },
     [setSplitRatio],
   );
-  const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
-  const [mobileRightOpen, setMobileRightOpen] = useState(false);
+  // Phone drawers live in the store: a tag tapped in the right drawer has to
+  // be able to swap to the left one (its search pane).
+  const mobileDrawer = useWorkspaceStore((s) => s.mobileDrawer);
+  const setMobileDrawer = useWorkspaceStore((s) => s.setMobileDrawer);
+  const [mobileTabsOpen, setMobileTabsOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const keyboard = useVirtualKeyboard();
+  // Crossing the phone breakpoint (rotation, window resize) starts with both
+  // drawers shut — desktop pane picks also set mobileDrawer, and must not
+  // pop a drawer open the next time the phone layout applies.
+  useEffect(() => {
+    useWorkspaceStore.getState().setMobileDrawer(null);
+  }, [isMobile]);
+
+  // Swipe in from a screen edge opens that side's drawer (Obsidian mobile).
+  // Never while typing: there the gesture is selecting text.
+  const edgeSwipe = useRef<{ id: number; x: number; y: number; side: "left" | "right" } | null>(null);
+  const onEdgePointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== "touch" || keyboard.open) return;
+    const edge = 24;
+    const side = e.clientX <= edge ? "left" : e.clientX >= window.innerWidth - edge ? "right" : null;
+    edgeSwipe.current = side ? { id: e.pointerId, x: e.clientX, y: e.clientY, side } : null;
+  };
+  const onEdgePointerMove = (e: React.PointerEvent) => {
+    const s = edgeSwipe.current;
+    if (!s || s.id !== e.pointerId) return;
+    const dx = e.clientX - s.x;
+    const dy = Math.abs(e.clientY - s.y);
+    if (dy > 30) edgeSwipe.current = null;
+    else if ((s.side === "left" && dx > 40) || (s.side === "right" && dx < -40)) {
+      edgeSwipe.current = null;
+      setMobileDrawer(s.side);
+    }
+  };
 
   // Mirror the user's "default view for new tabs" pref into the store so
   // openTab can apply it without reaching into React state.
@@ -162,10 +196,9 @@ export function Workspace({ vault }: { vault: Vault }) {
       openTab({ id: noteId, kind: "note", title }, { replace: opts?.inCurrentTab === true });
       // The open note is the one the graph accents as "selected".
       setGraphFocus(noteId);
-      setMobileLeftOpen(false);
-      setMobileRightOpen(false);
+      setMobileDrawer(null);
     },
-    [openTab, setGraphFocus],
+    [openTab, setGraphFocus, setMobileDrawer],
   );
 
   // Keep the graph's "note you are working in" on whatever note is actually
@@ -199,6 +232,9 @@ export function Workspace({ vault }: { vault: Vault }) {
   }, [vault.id, openTab, setGraphFocus]);
 
   const openGraph = useCallback(() => {
+    // The whole vault: opening the graph from anywhere but a folder's own
+    // graph button drops a folder scope left over from earlier.
+    useWorkspaceStore.getState().setGraphFolder(null);
     openTab({ id: "graph", kind: "graph", title: "Graph view" });
   }, [openTab]);
 
@@ -222,19 +258,14 @@ export function Workspace({ vault }: { vault: Vault }) {
   );
 
   const newNote = useMutation({
-    mutationFn: () => {
-      const stamp = new Date();
-      const title = `Untitled ${stamp.toISOString().slice(0, 16).replace("T", " ")}`;
-      return noteApi.create(vault.id, {
-        title,
-        folder_path: resolveNewNoteFolder(queryClient, vault.id),
-      });
-    },
+    mutationFn: () => createUntitledNote(vault.id, resolveNewNoteFolder(queryClient, vault.id)),
     onSuccess: (note) => {
       void queryClient.invalidateQueries({ queryKey: ["tree", vault.id] });
       void queryClient.invalidateQueries({ queryKey: ["graph", vault.id] });
       openNote(note.id, note.title);
     },
+    // A failed create used to do nothing at all — the button looked dead.
+    onError: (err) => toastError(err, "Could not create note."),
   });
 
   const closeTab = useWorkspaceStore((s) => s.closeTab);
@@ -406,42 +437,17 @@ export function Workspace({ vault }: { vault: Vault }) {
   }, [setSwitcherOpen, switcherOpen, newNote, openGraph, closeActiveTab, setSettingsOpen]);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-ob-sidebar text-ob-text md:flex-row">
+    <div className="flex h-dvh flex-col overflow-hidden bg-ob-sidebar text-ob-text md:flex-row">
       {/* Reads the OAuth callback's outcome out of the URL. Renders nothing. */}
       <Suspense fallback={null}>
         <ConnectionCallbackNotice />
       </Suspense>
-      {/* Mobile top bar — hamburger, vault name, panels */}
       {isMobile && (
-        <header className="flex h-12 shrink-0 items-center gap-1 border-b border-ob-border bg-ob-sidebar px-2 md:hidden">
-          <button
-            type="button"
-            aria-label="Open navigation"
-            onClick={() => setMobileLeftOpen(true)}
-            className="flex size-10 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover"
-          >
-            <Menu className="size-5" strokeWidth={1.75} />
-          </button>
-          <span className="min-w-0 flex-1 truncate text-center text-[13px] font-medium">
-            {vault.name}
-          </span>
-          <button
-            type="button"
-            aria-label="Settings"
-            onClick={() => setSettingsOpen(true)}
-            className="flex size-10 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover"
-          >
-            <SettingsIcon className="size-5" strokeWidth={1.75} />
-          </button>
-          <button
-            type="button"
-            aria-label="Open panels"
-            onClick={() => setMobileRightOpen(true)}
-            className="flex size-10 items-center justify-center rounded-md text-ob-muted hover:bg-ob-hover"
-          >
-            <PanelRight className="size-5" strokeWidth={1.75} />
-          </button>
-        </header>
+        <MobileTopBar
+          title={activeTab?.title ?? vault.name}
+          onOpenLeft={() => setMobileDrawer("left")}
+          onOpenRight={() => setMobileDrawer("right")}
+        />
       )}
 
       {!isMobile && ribbonVisible && (
@@ -465,11 +471,16 @@ export function Workspace({ vault }: { vault: Vault }) {
         ref={mainRef}
         data-tour="editor"
         className={cn(
-          "relative flex min-h-0 min-w-0 flex-1 border-l border-ob-border",
+          "relative flex min-h-0 min-w-0 flex-1 border-ob-border md:border-l",
           isColumnSplit ? "flex-col" : "flex-row",
         )}
+        onPointerDown={isMobile ? onEdgePointerDown : undefined}
+        onPointerMove={isMobile ? onEdgePointerMove : undefined}
       >
         {panes.map((pane, paneIndex) => {
+          // A phone shows one pane at a time — two side by side are 190px
+          // each. The other pane is kept, just not drawn.
+          if (isMobile && paneIndex !== activePane) return null;
           const paneTab = pane.tabs.find((t) => t.id === pane.activeTabId) ?? null;
           return (
             <section
@@ -478,7 +489,7 @@ export function Workspace({ vault }: { vault: Vault }) {
               onFocusCapture={() => setActivePane(paneIndex)}
               onClickCapture={() => setActivePane(paneIndex)}
               style={
-                panes.length === 2
+                panes.length === 2 && !isMobile
                   ? { flexGrow: paneIndex === 0 ? splitRatio : 1 - splitRatio, flexBasis: 0 }
                   : undefined
               }
@@ -487,11 +498,16 @@ export function Workspace({ vault }: { vault: Vault }) {
                 paneIndex > 0 && (isColumnSplit ? "border-t border-ob-border" : "border-l border-ob-border"),
               )}
             >
-              {prefs.showTabTitleBar && (
+              {prefs.showTabTitleBar && !isMobile && (
                 <TabBar paneIndex={paneIndex} onNewNote={() => newNote.mutate()} />
               )}
               <div className="relative min-h-0 flex-1 bg-ob-bg">
-                {paneTab === null && <EmptyState onNewNote={() => newNote.mutate()} />}
+                {paneTab === null && (
+                  <EmptyState
+                    onNewNote={() => newNote.mutate()}
+                    onOpenFiles={isMobile ? () => setMobileDrawer("left") : undefined}
+                  />
+                )}
                 {paneTab?.kind === "note" && (
                   <EditorPane vaultId={vault.id} noteId={paneTab.id} paneIndex={paneIndex} />
                 )}
@@ -502,7 +518,9 @@ export function Workspace({ vault }: { vault: Vault }) {
                     // Clicking a node opens the note BESIDE the graph (graph
                     // stays put) and marks that node selected.
                     onOpenNote={(id, title) =>
-                      openNoteBeside({ id, kind: "note", title }, paneIndex)
+                      isMobile
+                        ? openNote(id, title)
+                        : openNoteBeside({ id, kind: "note", title }, paneIndex)
                     }
                     onCreateNote={createFromGraph}
                   />
@@ -510,7 +528,7 @@ export function Workspace({ vault }: { vault: Vault }) {
                 {paneTab?.kind === "canvas" && (
                   <CanvasView vaultId={vault.id} canvasId={paneTab.id} />
                 )}
-                {paneIndex === panes.length - 1 && (
+                {paneIndex === panes.length - 1 && !isMobile && (
                   <StatusBar vaultId={vault.id} noteId={activeNoteId} />
                 )}
                 <PaneDropOverlay paneIndex={paneIndex} />
@@ -518,7 +536,7 @@ export function Workspace({ vault }: { vault: Vault }) {
             </section>
           );
         })}
-        {panes.length === 2 && (
+        {panes.length === 2 && !isMobile && (
           <div
             role="separator"
             aria-orientation={isColumnSplit ? "horizontal" : "vertical"}
@@ -541,18 +559,20 @@ export function Workspace({ vault }: { vault: Vault }) {
         <SidebarRight vaultId={vault.id} noteId={activeNoteId} onOpenNote={openNote} />
       )}
 
-      {/* Mobile drawers */}
-      {isMobile && mobileLeftOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50"
-          role="presentation"
-          onClick={() => setMobileLeftOpen(false)}
-        >
-          <div
-            className="absolute top-0 left-0 h-full w-[85vw] max-w-[320px] shadow-2xl"
-            role="dialog"
-            aria-label="Navigation drawer"
-            onClick={(e) => e.stopPropagation()}
+      {isMobile && !keyboard.open && (
+        <MobileNavBar
+          onNewNote={() => newNote.mutate()}
+          onOpenTabs={() => setMobileTabsOpen(true)}
+          onOpenMenu={() => setMobileMenuOpen(true)}
+        />
+      )}
+      {isMobile && (
+        <>
+          <Sheet
+            side="left"
+            title="Navigation drawer"
+            open={mobileDrawer === "left"}
+            onOpenChange={(o) => setMobileDrawer(o ? "left" : null)}
           >
             <SidebarLeft
               drawer
@@ -561,24 +581,28 @@ export function Workspace({ vault }: { vault: Vault }) {
               activeNoteId={activeNoteId}
               onOpenNote={openNote}
             />
-          </div>
-        </div>
-      )}
-      {isMobile && mobileRightOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50"
-          role="presentation"
-          onClick={() => setMobileRightOpen(false)}
-        >
-          <div
-            className="absolute top-0 right-0 h-full w-[85vw] max-w-[320px] shadow-2xl"
-            role="dialog"
-            aria-label="Panels drawer"
-            onClick={(e) => e.stopPropagation()}
+          </Sheet>
+          <Sheet
+            side="right"
+            title="Panels drawer"
+            open={mobileDrawer === "right"}
+            onOpenChange={(o) => setMobileDrawer(o ? "right" : null)}
           >
             <SidebarRight drawer vaultId={vault.id} noteId={activeNoteId} onOpenNote={openNote} />
-          </div>
-        </div>
+          </Sheet>
+          <MobileTabSwitcher
+            open={mobileTabsOpen}
+            onOpenChange={setMobileTabsOpen}
+            onNewNote={() => newNote.mutate()}
+          />
+          <MobileMenu
+            open={mobileMenuOpen}
+            onOpenChange={setMobileMenuOpen}
+            onOpenGraph={openGraph}
+            onOpenDailyNote={openDailyNote}
+            onOpenImport={() => setImportOpen(true)}
+          />
+        </>
       )}
 
       <QuickSwitcher vaultId={vault.id} onOpenNote={openNote} />
@@ -643,24 +667,30 @@ export function Workspace({ vault }: { vault: Vault }) {
   );
 }
 
-function EmptyState({ onNewNote }: { onNewNote: () => void }) {
+function EmptyState({ onNewNote, onOpenFiles }: { onNewNote: () => void; onOpenFiles?: () => void }) {
+  // onOpenFiles is only passed on a phone — no keyboard, so no chords either.
+  const touch = onOpenFiles !== undefined;
+  const action = touch
+    ? "min-h-11 rounded-lg px-4 text-[15px] text-ob-accent active:bg-ob-hover"
+    : "text-[13px] text-ob-accent hover:text-ob-accent-hover hover:underline";
   return (
     <div className="flex h-full flex-col items-center justify-center gap-2">
       <p className="text-[15px] text-ob-faint">No file is open</p>
-      <button
-        type="button"
-        onClick={onNewNote}
-        className="text-[13px] text-ob-accent hover:text-ob-accent-hover hover:underline"
-      >
-        Create new note (⌘N)
+      <button type="button" onClick={onNewNote} className={action}>
+        {touch ? "Create new note" : "Create new note (⌘N)"}
       </button>
       <button
         type="button"
         onClick={() => useWorkspaceStore.getState().setSwitcherOpen(true)}
-        className="text-[13px] text-ob-accent hover:text-ob-accent-hover hover:underline"
+        className={action}
       >
-        Open quick switcher (⌘O)
+        {touch ? "Find a note" : "Open quick switcher (⌘O)"}
       </button>
+      {onOpenFiles && (
+        <button type="button" onClick={onOpenFiles} className={action}>
+          Browse files
+        </button>
+      )}
     </div>
   );
 }

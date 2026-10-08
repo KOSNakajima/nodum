@@ -22,7 +22,7 @@ dependencies = [
     # (PYSEC-2026-1325 — upstream states it is not side-channel resistant and
     # will not be). PyJWT covers every algorithm in _ALLOWED_JWT_ALGORITHMS
     # using `cryptography`, and drops ecdsa/rsa/pyasn1 from the tree entirely.
-    "pyjwt>=2.10.1",
+    "pyjwt>=2.15.1",
     # Fernet, for encrypting users' AI provider keys at rest, and PyJWT's
     # backend for the RS* algorithms.
     "cryptography>=50.0.1",
@@ -58,7 +58,7 @@ dependencies = [
     "pgvector>=0.5.0",
     "pycrdt>=0.14.4",
     "pycrdt-websocket>=0.16.4",
-    "pypdf>=6.16.2",
+    "pypdf>=6.19.0",
     "mcp>=2.1.1",
 ]
 

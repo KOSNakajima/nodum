@@ -91,7 +91,7 @@ export function CanvasesSection({ vaultId }: { vaultId: string }) {
                   (ok) => ok && remove.mutate(c.id),
                 )
               }
-              className="flex size-5 shrink-0 items-center justify-center rounded text-ob-faint opacity-0 group-hover:opacity-100 hover:text-[#ff8a95]"
+              className="flex size-5 shrink-0 items-center justify-center rounded text-ob-faint max-md:size-10 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 hover:text-[#ff8a95]"
             >
               <Trash2 className="size-3.5" strokeWidth={1.75} />
             </button>

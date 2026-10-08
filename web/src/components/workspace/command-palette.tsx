@@ -23,7 +23,7 @@ import {
   parseEditorSettings,
   parseUserPrefs,
 } from "@/lib/hooks/use-editor-settings";
-import { resolveNewNoteFolder } from "@/lib/new-note-location";
+import { createUntitledNote, resolveNewNoteFolder } from "@/lib/new-note-location";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import type { PluginCommand } from "@/lib/plugins/types";
@@ -190,10 +190,7 @@ export function CommandPalette({
   };
 
   const createNoteRight = async () => {
-    const created = await noteApi.create(vaultId, {
-      title: `Untitled ${new Date().toISOString().slice(0, 16).replace("T", " ")}`,
-      folder_path: resolveNewNoteFolder(queryClient, vaultId),
-    });
+    const created = await createUntitledNote(vaultId, resolveNewNoteFolder(queryClient, vaultId));
     void queryClient.invalidateQueries({ queryKey: ["tree", vaultId] });
     void queryClient.invalidateQueries({ queryKey: ["graph", vaultId] });
     if (useWorkspaceStore.getState().panes.length < 2) useWorkspaceStore.getState().splitRight();
@@ -352,7 +349,7 @@ export function CommandPalette({
           showSearchIcon={false}
           onClose={() => setOpen(false)}
         />
-        <CommandList className="max-h-[min(60vh,560px)]">
+        <CommandList className="max-h-[min(60dvh,560px)] max-md:max-h-[50dvh]">
           <CommandEmpty>No matching commands.</CommandEmpty>
           {commands.map((c) => (
             <CommandItem
@@ -369,7 +366,7 @@ export function CommandPalette({
             </CommandItem>
           ))}
         </CommandList>
-        <div className="flex items-center justify-center gap-4 border-t border-ob-border px-3 py-2 text-[11px] text-ob-faint">
+        <div className="flex items-center justify-center gap-4 border-t border-ob-border px-3 py-2 text-[11px] text-ob-faint pointer-coarse:hidden">
           <span>
             <kbd className="rounded border border-ob-border px-1">↑↓</kbd> to navigate
           </span>

@@ -27,6 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { bookmarkApi, noteApi, vaultApi } from "@/lib/api/endpoints";
 import type { Note, TreeItem } from "@/lib/api/types";
 import { addFileProperty } from "@/lib/editor/format-commands";
+import { useIsMobile } from "@/lib/hooks/use-is-mobile";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { confirmDelete } from "./confirm-dialog";
@@ -71,6 +72,7 @@ export function NoteMenu({
 }) {
   const queryClient = useQueryClient();
   const toast = useToastStore((s) => s.push);
+  const isMobile = useIsMobile();
   const setMode = useWorkspaceStore((s) => s.setEditorMode);
   const openNoteBeside = useWorkspaceStore((s) => s.openNoteBeside);
   const setSplitOrientation = useWorkspaceStore((s) => s.setSplitOrientation);
@@ -251,7 +253,7 @@ export function NoteMenu({
               <button
                 type="button"
                 aria-label="More options"
-                className="flex size-6 items-center justify-center rounded text-ob-faint transition-colors duration-150 hover:bg-ob-hover hover:text-ob-text"
+                className="flex size-6 items-center justify-center rounded text-ob-faint transition-colors duration-150 hover:bg-ob-hover hover:text-ob-text max-md:size-10"
               >
                 <MoreHorizontal className="size-4" strokeWidth={1.75} />
               </button>
@@ -276,6 +278,9 @@ export function NoteMenu({
           <DropdownMenuItem onSelect={() => setMode("source")}>Source mode</DropdownMenuItem>
           <DropdownMenuSeparator />
 
+          {/* A phone shows one pane and one window: splits have nowhere to go. */}
+          {!isMobile && (
+          <>
           <DropdownMenuItem
             onSelect={() => {
               setSplitOrientation("row");
@@ -294,6 +299,8 @@ export function NoteMenu({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={openInNewWindow}>Open in new window</DropdownMenuItem>
           <DropdownMenuSeparator />
+          </>
+          )}
 
           <DropdownMenuItem
             onSelect={() => {

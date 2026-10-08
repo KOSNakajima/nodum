@@ -87,7 +87,7 @@ export function SidebarRight({
                 data-tour={p.kind === "ai" ? "ai" : undefined}
                 onClick={() => setPane(p.kind)}
                 className={cn(
-                  "flex size-7 items-center justify-center rounded-md transition-colors duration-150",
+                  "flex size-7 items-center justify-center rounded-md transition-colors duration-150 max-md:size-10",
                   pane === p.kind
                     ? "bg-ob-active text-ob-text"
                     : "text-ob-faint hover:bg-ob-hover hover:text-ob-text",
@@ -120,13 +120,16 @@ export function SidebarRight({
         )}
       </div>
 
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize right sidebar"
-        onPointerDown={onDragStart}
-        className="absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize hover:bg-ob-accent/40"
-      />
+      {/* A drawer has no edge to drag — and it would resize the desktop sidebar. */}
+      {!drawer && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize right sidebar"
+          onPointerDown={onDragStart}
+          className="absolute top-0 left-0 z-10 h-full w-1 cursor-col-resize hover:bg-ob-accent/40"
+        />
+      )}
     </div>
   );
 }

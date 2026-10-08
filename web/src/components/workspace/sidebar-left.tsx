@@ -2,7 +2,7 @@
 
 /** Left sidebar — Files / Search tab strip + resize handle (Obsidian style). */
 
-import { Bookmark, Files, Import, Search } from "lucide-react";
+import { Bookmark, Files, GitFork, Import, Search } from "lucide-react";
 import { useCallback, useRef } from "react";
 
 import { BookmarksPane } from "./bookmarks-pane";
@@ -85,6 +85,8 @@ export function SidebarLeft({
         {/* Hairline, because this one is not a fourth pane: the tabs to its
             left switch what is below, this opens a dialog. */}
         <span aria-hidden className="mx-0.5 h-4 w-px shrink-0 bg-ob-border" />
+        {/* Phones have no ribbon: the graph sits beside the files it maps. */}
+        {drawer && <GraphButton />}
         <ImportDataButton />
         <VaultSwitcher vaultId={vaultId} vaultName={vaultName} />
       </div>
@@ -102,13 +104,16 @@ export function SidebarLeft({
         {pane === "bookmarks" && <BookmarksPane vaultId={vaultId} onOpenNote={onOpenNote} />}
       </div>
 
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize sidebar"
-        onPointerDown={onDragStart}
-        className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize hover:bg-ob-accent/40"
-      />
+      {/* A drawer has no edge to drag — and it would resize the desktop sidebar. */}
+      {!drawer && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onPointerDown={onDragStart}
+          className="absolute top-0 right-0 z-10 h-full w-1 cursor-col-resize hover:bg-ob-accent/40"
+        />
+      )}
     </div>
   );
 }
@@ -118,6 +123,24 @@ export function SidebarLeft({
  *  Shaped like a PaneTab so the strip reads as one row, but deliberately not
  *  one: no `aria-pressed`, because it toggles nothing — `aria-haspopup` says
  *  what actually happens. The label lives on the tooltip, like its neighbours. */
+function GraphButton() {
+  return (
+    <button
+      type="button"
+      aria-label="Open graph view"
+      onClick={() => {
+        const store = useWorkspaceStore.getState();
+        store.setGraphFolder(null);
+        store.openTab({ id: "graph", kind: "graph", title: "Graph view" });
+        store.setMobileDrawer(null);
+      }}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md text-ob-faint transition-colors duration-150 hover:bg-ob-hover hover:text-ob-text max-md:size-10"
+    >
+      <GitFork className="size-4 rotate-90" strokeWidth={1.75} />
+    </button>
+  );
+}
+
 function ImportDataButton() {
   const setImportOpen = useWorkspaceStore((s) => s.setImportOpen);
   return (
@@ -129,7 +152,7 @@ function ImportDataButton() {
           aria-haspopup="dialog"
           data-testid="import-data-button"
           onClick={() => setImportOpen(true)}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ob-faint transition-colors duration-150 hover:bg-ob-hover hover:text-ob-text"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ob-faint max-md:size-10 transition-colors duration-150 hover:bg-ob-hover hover:text-ob-text"
         >
           <Import className="size-4" strokeWidth={1.75} />
         </button>
@@ -159,7 +182,7 @@ function PaneTab({
           aria-pressed={active}
           onClick={onClick}
           className={cn(
-            "flex size-7 items-center justify-center rounded-md transition-colors duration-150",
+            "flex size-7 items-center justify-center rounded-md transition-colors duration-150 max-md:size-10",
             active ? "bg-ob-active text-ob-text" : "text-ob-faint hover:bg-ob-hover hover:text-ob-text",
           )}
         >
