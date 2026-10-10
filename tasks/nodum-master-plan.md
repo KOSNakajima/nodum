@@ -225,6 +225,10 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-10: the chat input grows with its content** (`feature/7.chat-input-grow_kosnakajima_101020261746`).
+  - `rows=1`, height refit to scrollHeight on every change and on width
+    changes (ResizeObserver, width only), capped at 50vh. e2e: ai-chat 9/9.
+
 - **2026-10-10: the right sidebar can grow past 520px** (`feature/6.sidebar-width_kosnakajima_101020261739`).
   - `setRightWidth` keeps only the 220px minimum; `SidebarRight` caps width
     at `100vw − (ribbon 44 + open left sidebar + 320px editor)` on drag and
