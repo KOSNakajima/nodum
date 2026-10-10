@@ -22,6 +22,11 @@ const GraphView = dynamic(
   { ssr: false, loading: () => <EmptyHint>Loading graph…</EmptyHint> },
 );
 
+/** ribbon.tsx is w-11. */
+const RIBBON_WIDTH = 44;
+/** The editor never gets narrower than this from widening the sidebar. */
+const EDITOR_MIN_WIDTH = 320;
+
 export function SidebarRight({
   vaultId,
   noteId,
@@ -39,14 +44,23 @@ export function SidebarRight({
   const pane = useWorkspaceStore((s) => s.rightPane);
   const setPane = useWorkspaceStore((s) => s.setRightPane);
   const dragging = useRef(false);
+  // Everything left of this sidebar that must stay on screen: the ribbon, the
+  // left sidebar when open, and a usable editor. The sidebar may take the rest.
+  const ribbonVisible = useWorkspaceStore((s) => s.ribbonVisible);
+  const leftOpen = useWorkspaceStore((s) => s.leftSidebarOpen);
+  const leftWidth = useWorkspaceStore((s) => s.leftWidth);
+  const reserved = (ribbonVisible ? RIBBON_WIDTH : 0) + (leftOpen ? leftWidth : 0) + EDITOR_MIN_WIDTH;
 
   const onDragStart = useCallback(
     (e: React.PointerEvent) => {
       dragging.current = true;
       const startX = e.clientX;
-      const startWidth = width;
+      // The width on screen, which the max-width below may hold under the
+      // stored one after the window shrank.
+      const startWidth = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect().width;
       const onMove = (ev: PointerEvent) => {
-        if (dragging.current) setWidth(startWidth - (ev.clientX - startX));
+        if (!dragging.current) return;
+        setWidth(Math.min(startWidth - (ev.clientX - startX), window.innerWidth - reserved));
       };
       const onUp = () => {
         dragging.current = false;
@@ -56,7 +70,7 @@ export function SidebarRight({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [width, setWidth],
+    [setWidth, reserved],
   );
 
   if (!drawer && !open) return null;
@@ -74,7 +88,7 @@ export function SidebarRight({
     <div
       data-tour="panels"
       className="relative flex shrink-0 flex-col border-l border-ob-border bg-ob-sidebar"
-      style={drawer ? { width: "100%", height: "100%" } : { width }}
+      style={drawer ? { width: "100%", height: "100%" } : { width, maxWidth: `calc(100vw - ${reserved}px)` }}
     >
       <div className="flex items-center gap-0.5 border-b border-ob-border px-2 py-1">
         {panes.map((p) => (
