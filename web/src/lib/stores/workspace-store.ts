@@ -655,7 +655,9 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setRightPane: (pane) => set({ rightPane: pane }),
       toggleRibbon: () => set({ ribbonVisible: !get().ribbonVisible }),
       setLeftWidth: (w) => set({ leftWidth: Math.min(Math.max(w, 200), 480) }),
-      setRightWidth: (w) => set({ rightWidth: Math.min(Math.max(w, 220), 520) }),
+      // No fixed maximum: the right sidebar holds the AI chat, which earns real
+      // width. SidebarRight caps it against the window so the editor survives.
+      setRightWidth: (w) => set({ rightWidth: Math.max(w, 220) }),
       setSplitRatio: (r) => set({ splitRatio: Math.min(Math.max(r, 0.2), 0.8) }),
       setDragging: (d) => set({ dragging: d }),
       setGraphFocus: (noteId) => set({ graphFocusNoteId: noteId }),
