@@ -225,6 +225,11 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-10: the right sidebar can grow past 520px** (`feature/6.sidebar-width_kosnakajima_101020261739`).
+  - `setRightWidth` keeps only the 220px minimum; `SidebarRight` caps width
+    at `100vw − (ribbon 44 + open left sidebar + 320px editor)` on drag and
+    as max-width. Room for the AI chat without ever hiding the editor.
+
 - **2026-10-10: "fix these lines" — selection context and edit_note**
   (`feature/5.ai-selection-context_kosnakajima_101020261726`).
   - `MarkdownEditor.onSelectionChange` → `editor-selection-store` (not
