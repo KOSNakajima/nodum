@@ -18,7 +18,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, History, Plus, Send, Sparkles, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 import { ReadingView } from "@/components/editor/reading-view";
 import { Button } from "@/components/ui/button";
@@ -92,6 +92,36 @@ export function AiChatPane({
   const [pending, setPending] = useState<AIConversationMessage[]>([]);
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+
+  // The input grows with what is typed: one line when empty, every line in
+  // view as it gets longer (up to half the screen — then it scrolls), so the
+  // start of a message never disappears behind a scrollbar.
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fitInput = useCallback(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+  useLayoutEffect(fitInput, [draft, fitInput]);
+  // A wider or narrower panel rewraps the text; refit on width changes only,
+  // since the refit itself changes the height.
+  const attachInput = useCallback(
+    (el: HTMLTextAreaElement | null) => {
+      inputRef.current = el;
+      if (!el) return;
+      fitInput();
+      let width = el.clientWidth;
+      const observer = new ResizeObserver(() => {
+        if (el.clientWidth === width) return;
+        width = el.clientWidth;
+        fitInput();
+      });
+      observer.observe(el);
+      return () => observer.disconnect();
+    },
+    [fitInput],
+  );
 
   // The open note and the lines selected in it — shown above the input so it
   // is never a guess whether they go along, and sent with the message.
@@ -431,8 +461,9 @@ export function AiChatPane({
         }}
       >
         <textarea
+          ref={attachInput}
           aria-label="Message the assistant"
-          rows={2}
+          rows={1}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -447,7 +478,7 @@ export function AiChatPane({
           placeholder="Ask about this vault…"
           // The box around it shows focus (focus-within); the global
           // :focus-visible ring is unlayered, so only !important removes it.
-          className="block min-h-[3.5rem] w-full resize-none bg-transparent px-2 py-1.5 text-[13px] text-ob-text outline-none! placeholder:text-ob-faint"
+          className="block max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-[13px] text-ob-text outline-none! placeholder:text-ob-faint"
         />
         {/* What the next message takes along, Claude Code style: the open note
             — or the lines selected in it — as a chip with an ×. */}

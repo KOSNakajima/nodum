@@ -346,6 +346,25 @@ test.describe("AI chat panel", () => {
     await expect(page.getByLabel("Message the assistant")).toHaveValue("anything");
   });
 
+  test("the input starts one line high and grows with what is typed", async ({ page }) => {
+    await signupFreshUser(page, "ai-grow");
+    await configureStubProvider(page, stubUrl);
+    await page.reload();
+    await openAiPanel(page);
+
+    const input = page.getByLabel("Message the assistant");
+    const height = () => input.evaluate((el) => el.getBoundingClientRect().height);
+    const oneLine = await height();
+
+    await input.fill("one\ntwo\nthree\nfour");
+    await expect.poll(height).toBeGreaterThan(oneLine * 2.5);
+    // Every line is in view — nothing has scrolled off the top.
+    expect(await input.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+
+    await input.fill("");
+    await expect.poll(height).toBeLessThanOrEqual(oneLine + 1);
+  });
+
   test("the open note and selected lines go along as a chip, and × leaves them out", async ({ page }) => {
     await signupFreshUser(page, "ai-select");
     await configureStubProvider(page, stubUrl);
