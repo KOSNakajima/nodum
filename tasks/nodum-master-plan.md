@@ -235,8 +235,11 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
     user messages, the open note or this turn's tool results. Closes the
     "GET carries vault text" variant of the audit's injection finding; the
     remote-`<img>` variant in ReadingView is still open.
-  - UI: status "Opening <host>…"; `{"kind": "visited", url}` actions render
-    as external-link chips. Gates: unit 322, integration 297, `make verify`.
+  - UI: every tool call is now a stored step (`searched`/`read`/`created`/
+    `updated`/`visited`/`failed`), drawn by `AIToolSteps` between the
+    question and the reply like a terminal agent's trail; the running call
+    shows with a spinner ("Opening <host>…"). Gates: unit 326, integration
+    297, `make verify`, ai-chat e2e 7/7.
 
 - **2026-10-08: first self-host on a fresh machine — three fixes**
   (`hotfix/1.minio-compose_kosnakajima_081020261652` →
