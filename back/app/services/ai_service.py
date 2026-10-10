@@ -624,9 +624,8 @@ async def chat_with_vault_events(
                     result = await ai_tools.run_tool(db, vault_id, user_id, call.name, call.arguments)
                     grounding.append(json.dumps(result, ensure_ascii=False))
                 recorded = ai_tools.describe(call.name, call.arguments, result)
-                if recorded:
-                    actions.append(recorded)
-                    yield {"type": "action", "action": recorded}
+                actions.append(recorded)
+                yield {"type": "action", "action": recorded}
                 history.append(ai_providers.tool_result_message(provider, call, result))
         else:
             # Ran out of rounds with tools still pending: say so rather than

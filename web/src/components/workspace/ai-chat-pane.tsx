@@ -17,7 +17,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, FilePlus2, Globe, History, Plus, Send, Sparkles, Trash2 } from "lucide-react";
+import { Check, History, Plus, Send, Sparkles, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { ReadingView } from "@/components/editor/reading-view";
@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { aiApi } from "@/lib/api/endpoints";
 import type { AIAction, AIConversationMessage, Note } from "@/lib/api/types";
+import { AIToolSteps } from "./ai-tool-steps";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { toastError } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
@@ -92,7 +93,8 @@ export function AiChatPane({
   const scrollToEnd = () => requestAnimationFrame(() => listRef.current?.scrollTo({ top: 1e6 }));
 
   // What the assistant is doing and saying right now, while the turn streams:
-  // the reply grows word by word, and a tool call shows as a status line.
+  // the reply grows word by word, finished tool calls pile up as steps, and the
+  // one running shows as a spinner line.
   const [live, setLive] = useState<{ text: string; status: string | null; actions: AIAction[] }>({
     text: "",
     status: null,
@@ -113,7 +115,7 @@ export function AiChatPane({
           } else if (event.type === "status") {
             setLive((l) => ({ ...l, status: event.text }));
           } else if (event.type === "action") {
-            setLive((l) => ({ ...l, actions: [...l.actions, event.action] }));
+            setLive((l) => ({ ...l, status: null, actions: [...l.actions, event.action] }));
           } else if (event.type === "reset") {
             setLive((l) => ({ ...l, text: "" }));
           }
@@ -141,7 +143,7 @@ export function AiChatPane({
         // Once the stored transcript includes this turn, the local copy would
         // double it.
         .then(() => setPending([]));
-      if ((data.actions ?? []).some((action) => action.kind !== "visited")) {
+      if ((data.actions ?? []).some((action) => action.kind === "created" || action.kind === "updated")) {
         void queryClient.invalidateQueries({ queryKey: ["tree", vaultId] });
         void queryClient.invalidateQueries({ queryKey: ["graph", vaultId] });
         void queryClient.invalidateQueries({ queryKey: ["backlinks", vaultId] });
@@ -271,11 +273,15 @@ export function AiChatPane({
         {messages.length === 0 && (
           <p className="px-1 text-[13px] text-ob-faint">
             Ask about your notes, or ask for one to be written. It can search, read, create and
-            extend notes in this vault.
+            extend notes in this vault, and open links you paste.
           </p>
         )}
         {messages.map((message, i) => (
           <div key={i} className="space-y-1.5">
+            {/* The steps behind the answer come first, between the question and
+                the reply — every tool call, never silent, and stored with the
+                message so a restored thread shows them. */}
+            <AIToolSteps actions={message.actions ?? []} onOpenNote={onOpenNote} />
             <p className="px-1 text-[11px] font-medium tracking-wide text-ob-faint uppercase">
               {message.role === "user" ? "You" : "Assistant"}
             </p>
@@ -295,45 +301,16 @@ export function AiChatPane({
                   onNavigate={() => undefined}
                 />
               ) : (
-                <p className="whitespace-pre-wrap">{message.content}</p>
+                // A pasted URL has no break points; let it wrap anywhere
+                // rather than push the panel into horizontal scroll.
+                <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</p>
               )}
             </div>
-            {/* Every vault change and every page visited is shown, never
-                silent — and it is stored with the message, so a restored
-                thread still shows what was written and where it came from. */}
-            {(message.actions ?? []).map((action: AIAction, index) =>
-              action.kind === "visited" ? (
-                <a
-                  key={`${index}-${action.url}`}
-                  // Only ever http(s): the server fetched it, but the link is
-                  // still rendered from stored data.
-                  href={/^https?:\/\//i.test(action.url) ? action.url : undefined}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={action.url}
-                  className="flex w-full items-center gap-1.5 rounded border border-ob-border px-2 py-1 text-left text-[12px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
-                >
-                  <Globe className="size-3.5 shrink-0 text-ob-accent" strokeWidth={2} />
-                  <span className="truncate">Visited {action.title}</span>
-                </a>
-              ) : (
-                <button
-                  key={`${action.note_id}-${action.kind}`}
-                  type="button"
-                  onClick={() => onOpenNote(action.note_id, action.title)}
-                  className="flex w-full items-center gap-1.5 rounded border border-ob-border px-2 py-1 text-left text-[12px] text-ob-muted hover:bg-ob-hover hover:text-ob-text"
-                >
-                  <FilePlus2 className="size-3.5 shrink-0 text-ob-accent" strokeWidth={2} />
-                  <span className="truncate">
-                    {action.kind === "created" ? "Created" : "Updated"} {action.title}
-                  </span>
-                </button>
-              ),
-            )}
           </div>
         ))}
         {send.isPending && (
           <div className="space-y-1.5" data-testid="ai-live">
+            <AIToolSteps actions={live.actions} running={live.status} onOpenNote={onOpenNote} />
             {live.text ? (
               <>
                 <p className="px-1 text-[11px] font-medium tracking-wide text-ob-faint uppercase">Assistant</p>
@@ -344,10 +321,13 @@ export function AiChatPane({
                   <ReadingView content={live.text} vaultId={vaultId} onNavigate={() => undefined} />
                 </div>
               </>
-            ) : null}
-            <p className="px-1 text-[13px] text-ob-faint" aria-live="polite">
-              {live.status ?? (live.text ? "" : "Thinking…")}
-            </p>
+            ) : (
+              !live.status && (
+                <p className="px-1 text-[13px] text-ob-faint" aria-live="polite">
+                  Thinking…
+                </p>
+              )
+            )}
           </div>
         )}
       </div>
