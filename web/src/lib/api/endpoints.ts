@@ -4,6 +4,7 @@ import { api, ApiError, apiJson, apiStream } from "./client";
 import type {
   AIChatReply,
   AIStreamEvent,
+  AIVaultChatRequest,
   AIConversationDetail,
   AIConversationMeta,
   AIStatus,
@@ -308,14 +309,14 @@ export const aiApi = {
    *  Only the new message is sent — the server holds the transcript. */
   vaultChat: (
     vaultId: string,
-    body: { message: string; conversation_id?: string; context?: string },
+    body: AIVaultChatRequest,
   ) => apiJson<AIChatReply>(`/ai/vaults/${vaultId}/chat`, "POST", body),
   /** The same turn, streamed: `onEvent` sees status / delta / action / reset
    *  events as they happen; the promise resolves with the stored reply (the
    *  `done` event) or rejects with the `error` event's message. */
   vaultChatStream: (
     vaultId: string,
-    body: { message: string; conversation_id?: string; context?: string },
+    body: AIVaultChatRequest,
     onEvent: (event: AIStreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<AIChatReply> =>

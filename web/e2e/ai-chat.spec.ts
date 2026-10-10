@@ -3,7 +3,7 @@ import { AddressInfo } from "node:net";
 
 import { expect, test, type Page } from "@playwright/test";
 
-import { openNoteFromExplorer, signupFreshUser } from "./helpers";
+import { editorSurface, openNoteFromExplorer, signupFreshUser } from "./helpers";
 
 /** The AI chat panel: the unconfigured gate, an ordinary answer, and a turn
  *  where the assistant writes a note into the vault.
@@ -344,5 +344,45 @@ test.describe("AI chat panel", () => {
       timeout: 20_000,
     });
     await expect(page.getByLabel("Message the assistant")).toHaveValue("anything");
+  });
+
+  test("the open note and selected lines go along as a chip, and × leaves them out", async ({ page }) => {
+    await signupFreshUser(page, "ai-select");
+    await configureStubProvider(page, stubUrl);
+    await page.reload();
+    await openNoteFromExplorer(page, "Welcome to Nodum");
+    await openAiPanel(page);
+
+    // Before anything is selected, the open note is the chip.
+    const context = page.getByTestId("ai-context");
+    await expect(context).toContainText("Welcome to Nodum");
+    await expect(page.getByRole("button", { name: "Don't include Welcome to Nodum" })).toBeVisible();
+
+    // Select from the top of the note down two lines: the chip gains the range.
+    await editorSurface(page).click();
+    await page.keyboard.press("ControlOrMeta+Home");
+    await page.keyboard.press("Shift+ArrowDown");
+    await page.keyboard.press("Shift+ArrowDown");
+    await expect(context).toContainText(/Welcome to NodumL\d+(–\d+)?/);
+
+    stubReplies = [chatMessage("Looks fine to me."), chatMessage("Nothing attached.")];
+    await page.getByLabel("Message the assistant").fill("ここを直して");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByText("Looks fine to me.")).toBeVisible({ timeout: 15_000 });
+
+    // The model was shown the selection, and the transcript records it.
+    const sent = stubRequests[0] as { body: { messages: { role: string; content: string }[] } };
+    expect(sent.body.messages[0].content).toContain("<selection>");
+    await expect(page.getByRole("button", { name: /^Lines? [\d–]+ of Welcome to Nodum$/ })).toBeVisible();
+
+    // × leaves the selection — and the note — out of the next message.
+    await page.getByRole("button", { name: /Don't include Lines? [\d–]+ of Welcome to Nodum/ }).click();
+    await expect(context).not.toContainText("Welcome to Nodum");
+    await page.getByLabel("Message the assistant").fill("and now?");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByText("Nothing attached.")).toBeVisible({ timeout: 15_000 });
+    const second = stubRequests[1] as { body: { messages: { role: string; content: string }[] } };
+    expect(second.body.messages[0].content).not.toContain("<selection>");
+    expect(second.body.messages[0].content).not.toContain("The note the user is looking at");
   });
 });

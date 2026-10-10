@@ -57,6 +57,24 @@ export function historySnapshotCount(): number {
   return historyCache.size;
 }
 
+export interface SelectedLines {
+  fromLine: number;
+  toLine: number;
+  text: string;
+}
+
+/** The main selection as whole lines, or null for a bare caret. */
+function selectedLines(state: EditorState): SelectedLines | null {
+  const range = state.selection.main;
+  if (range.empty) return null;
+  const first = state.doc.lineAt(range.from);
+  let last = state.doc.lineAt(range.to);
+  // A selection ending at the very start of a line (triple-click, ⇧↓) does not
+  // include that line — count it the way the user sees it.
+  if (range.to === last.from && last.number > first.number) last = state.doc.line(last.number - 1);
+  return { fromLine: first.number, toLine: last.number, text: state.sliceDoc(range.from, range.to) };
+}
+
 export interface MarkdownEditorProps {
   vaultId: string;
   /** Pane + note identity for the undo-history snapshot; omit to never keep one. */
@@ -71,6 +89,9 @@ export interface MarkdownEditorProps {
   menuActions?: EditorContextMenuActions;
   /** Receives the live view so the pane's ⋯ menu can run editor commands. */
   onViewReady?: (view: EditorView | null) => void;
+  /** The selected lines (1-based, inclusive) whenever they change; `null` when
+   *  the selection collapses or the editor goes away. Feeds the AI panel. */
+  onSelectionChange?: (lines: SelectedLines | null) => void;
   /** User editor prefs (S11.2) — gutter line numbers + native spellcheck. */
   showLineNumbers?: boolean;
   spellcheck?: boolean;
@@ -86,6 +107,7 @@ export function MarkdownEditor({
   collab,
   menuActions,
   onViewReady,
+  onSelectionChange,
   showLineNumbers = false,
   spellcheck = false,
 }: MarkdownEditorProps) {
@@ -94,12 +116,14 @@ export function MarkdownEditor({
   const onChangeRef = useRef(onChange);
   const onNavigateRef = useRef(onNavigate);
   const onViewReadyRef = useRef(onViewReady);
+  const onSelectionChangeRef = useRef(onSelectionChange);
 
   useEffect(() => {
     onChangeRef.current = onChange;
     onNavigateRef.current = onNavigate;
     onViewReadyRef.current = onViewReady;
-  }, [onChange, onNavigate, onViewReady]);
+    onSelectionChangeRef.current = onSelectionChange;
+  }, [onChange, onNavigate, onViewReady, onSelectionChange]);
 
   // Mode and editor prefs are Compartments: reconfiguring keeps the whole
   // EditorState — history, selection, scroll — where a remount would not.
@@ -164,6 +188,9 @@ export function MarkdownEditor({
       gutterCompartment.of(showLineNumbers ? lineNumbers() : []),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) onChangeRef.current(update.state.doc.toString());
+        if (update.selectionSet || update.docChanged) {
+          onSelectionChangeRef.current?.(selectedLines(update.state));
+        }
       }),
       modeCompartment.of(modeExtensions(mode)),
     ];
@@ -194,6 +221,7 @@ export function MarkdownEditor({
       view.destroy();
       viewRef.current = null;
       onViewReadyRef.current?.(null);
+      onSelectionChangeRef.current?.(null);
     };
     // Recreate only when the note identity changes — content updates flow
     // through the editor itself; external resets use the key prop; mode and

@@ -12,7 +12,7 @@
  * visited pages open in a new tab.
  */
 
-import { Loader2 } from "lucide-react";
+import { FileText, Loader2, TextSelect, X } from "lucide-react";
 
 import type { AIAction } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ const FAILED_VERB: Record<string, string> = {
   read_note: "Read",
   create_note: "Create",
   append_to_note: "Update",
+  edit_note: "Edit",
   fetch_url: "Visit",
 };
 
@@ -48,7 +49,9 @@ function shortUrl(url: string) {
   }
 }
 
-function describe(action: AIAction, onOpenNote: (id: string, title: string) => void): Line {
+type Step = Exclude<AIAction, { kind: "context" }>;
+
+function describe(action: Step, onOpenNote: (id: string, title: string) => void): Line {
   switch (action.kind) {
     case "searched":
       return {
@@ -70,6 +73,13 @@ function describe(action: AIAction, onOpenNote: (id: string, title: string) => v
         verb: "Updated",
         target: action.title,
         summary: "Appended to the note",
+        open: () => onOpenNote(action.note_id, action.title),
+      };
+    case "edited":
+      return {
+        verb: "Edited",
+        target: action.title,
+        summary: `Removed ${plural(action.removed, "line")}, added ${plural(action.added, "line")}`,
         open: () => onOpenNote(action.note_id, action.title),
       };
     case "visited": {
@@ -153,10 +163,12 @@ export function AIToolSteps({
   running?: string | null;
   onOpenNote: (id: string, title: string) => void;
 }) {
-  if (actions.length === 0 && !running) return null;
+  // A user message's `context` record is not a step; ContextChip draws it.
+  const steps = actions.filter((a): a is Step => a.kind !== "context");
+  if (steps.length === 0 && !running) return null;
   return (
     <ol className="space-y-1 px-1 text-[12px]" aria-label="Assistant steps">
-      {actions.map((action, i) => (
+      {steps.map((action, i) => (
         <Step key={i} line={describe(action, onOpenNote)} />
       ))}
       {running && (
@@ -166,5 +178,68 @@ export function AIToolSteps({
         </li>
       )}
     </ol>
+  );
+}
+
+/** "Lines 3–4" / "Line 3" — what a selection covers. */
+export function linesLabel(from: number, to: number) {
+  return from === to ? `Line ${from}` : `Lines ${from}–${to}`;
+}
+
+/**
+ * The open note — or lines selected in it — as a chip, the way Claude Code
+ * shows the file that goes along with a prompt. With `onRemove` it has an ×
+ * (the input: "don't send this"); with `onOpen` it opens the note (the
+ * transcript: "this went along").
+ */
+export function ContextChip({
+  title,
+  fromLine,
+  toLine,
+  onRemove,
+  onOpen,
+}: {
+  title: string;
+  fromLine?: number;
+  toLine?: number;
+  onRemove?: () => void;
+  onOpen?: () => void;
+}) {
+  const selected = fromLine !== undefined && toLine !== undefined;
+  const Icon = selected ? TextSelect : FileText;
+  const description = selected ? `${linesLabel(fromLine, toLine)} of ${title}` : title;
+  const body = (
+    <>
+      <Icon className="size-3 shrink-0" strokeWidth={2} />
+      <span className="truncate text-ob-muted">{title}</span>
+      {selected && (
+        <span className="shrink-0 text-ob-faint">
+          {fromLine === toLine ? `L${fromLine}` : `L${fromLine}–${toLine}`}
+        </span>
+      )}
+    </>
+  );
+  const chip = "inline-flex min-w-0 max-w-full items-center gap-1 rounded border border-ob-border px-1.5 py-0.5 text-[11px] text-ob-faint";
+  if (onOpen) {
+    return (
+      <button type="button" onClick={onOpen} aria-label={description} className={cn(chip, "hover:bg-ob-hover")}>
+        {body}
+      </button>
+    );
+  }
+  return (
+    <span className={chip} title={description}>
+      {body}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Don't include ${description}`}
+          className="-mr-0.5 shrink-0 rounded text-ob-faint hover:text-ob-text"
+        >
+          <X className="size-3" strokeWidth={2} />
+        </button>
+      )}
+    </span>
   );
 }

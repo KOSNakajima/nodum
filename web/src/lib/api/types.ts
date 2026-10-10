@@ -251,10 +251,14 @@ export interface AIStatus {
   providers: AIProviderInfo[];
 }
 
-/** One tool call the assistant made during a turn, as stored with the reply.
- * Messages from before every call was recorded hold only created/updated. */
+/** One tool call the assistant made during a turn, as stored with the reply —
+ * or, on a user message, the `context` that went along with it (the open note
+ * and any selected lines). Messages from before every call was recorded hold
+ * only created/updated. */
 export type AIAction =
   | { kind: "created" | "updated" | "read"; title: string; note_id: string }
+  | { kind: "edited"; title: string; note_id: string; removed: number; added: number }
+  | { kind: "context"; title: string; note_id: string; from_line?: number; to_line?: number }
   | { kind: "searched"; query: string; count: number }
   | { kind: "visited"; title: string; url: string; chars?: number; truncated?: boolean }
   | { kind: "failed"; tool: string; detail: string; error: string };
@@ -267,6 +271,18 @@ export interface AIChatReply {
   /** The thread this turn was appended to — a new one when none was sent. */
   conversation_id: string;
   title: string;
+}
+
+/** One vault chat turn. `note_id` and `selection` say what the user was
+ * looking at; the server records them on the message and shows the model the
+ * selected lines. */
+export interface AIVaultChatRequest {
+  message: string;
+  conversation_id?: string;
+  context?: string;
+  note_id?: string;
+  /** 1-based, inclusive. */
+  selection?: { from_line: number; to_line: number; text: string };
 }
 
 /** One server-sent event of a streamed vault chat turn. */
