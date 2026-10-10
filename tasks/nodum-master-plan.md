@@ -225,6 +225,22 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-10: "fix these lines" — selection context and edit_note**
+  (`feature/5.ai-selection-context_kosnakajima_101020261726`).
+  - `MarkdownEditor.onSelectionChange` → `editor-selection-store` (not
+    persisted) → `VaultChatRequest.note_id` + `selection` → system prompt
+    (`lines a-b of "Title"` + text) and fetch_url grounding.
+  - Input box shows a Claude Code-style chip (note, or note + `La–b`) with ×
+    to leave it out; the user message stores a `context` action rendered as
+    a chip in the transcript. No migration — `actions` JSONB.
+  - `edit_note` (exact single-occurrence replace) is the first assistant tool
+    that rewrites text; `version_service.snapshot_now` runs first so it is
+    always restorable. Edited/appended notes are refetched so an open editor
+    adopts them (unless it has unsaved typing).
+  - Gates: unit 326, integration 303 (+6 `test_ai_edit`), `make verify`,
+    ai-chat e2e 8/8. Full e2e 278/280 locally: forum moderation needs DB on
+    :5432 (`make_staff.py`), graph-hover flaky — both unrelated.
+
 - **2026-10-08: the assistant can open web pages** (`feature/4.fetch-url_kosnakajima_081020261744`).
   - `fetch_url` tool → `services/web_fetch.py`: page → markdown via the
     importers' converter, chrome stripped, 2 MB / 12k-char caps, meta charset.
