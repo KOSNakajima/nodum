@@ -1,0 +1,513 @@
+[
+ {
+  "type": "response.created",
+  "response": {
+   "id": "resp_0d3a471fa090ad9e016aca0d2399c0819485b0e4cc73ddc704",
+   "object": "response",
+   "created_at": 1791626531,
+   "status": "in_progress",
+   "background": false,
+   "completed_at": null,
+   "content_filters": null,
+   "error": null,
+   "frequency_penalty": 0.0,
+   "incomplete_details": null,
+   "instructions": null,
+   "max_output_tokens": 2000,
+   "max_tool_calls": null,
+   "model": "gpt-5.4",
+   "moderation": null,
+   "output": [],
+   "parallel_tool_calls": true,
+   "presence_penalty": 0.0,
+   "previous_response_id": null,
+   "prompt_cache_key": null,
+   "prompt_cache_retention": "in_memory",
+   "reasoning": {
+    "context": "current_turn",
+    "effort": "high",
+    "mode": "standard",
+    "summary": "detailed"
+   },
+   "safety_identifier": null,
+   "service_tier": "auto",
+   "store": false,
+   "temperature": 1.0,
+   "text": {
+    "format": {
+     "type": "text"
+    },
+    "verbosity": "medium"
+   },
+   "tool_choice": "auto",
+   "tool_usage": {
+    "image_gen": {
+     "input_tokens": 0,
+     "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+     },
+     "output_tokens": 0,
+     "output_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+     },
+     "total_tokens": 0
+    },
+    "web_search": {
+     "num_requests": 0
+    }
+   },
+   "tools": [],
+   "top_logprobs": 0,
+   "top_p": 0.98,
+   "truncation": "disabled",
+   "usage": null,
+   "user": null,
+   "metadata": {}
+  },
+  "sequence_number": 0
+ },
+ {
+  "type": "response.in_progress",
+  "response": {
+   "id": "resp_0d3a471fa090ad9e016aca0d2399c0819485b0e4cc73ddc704",
+   "object": "response",
+   "created_at": 1791626531,
+   "status": "in_progress",
+   "background": false,
+   "completed_at": null,
+   "content_filters": null,
+   "error": null,
+   "frequency_penalty": 0.0,
+   "incomplete_details": null,
+   "instructions": null,
+   "max_output_tokens": 2000,
+   "max_tool_calls": null,
+   "model": "gpt-5.4",
+   "moderation": null,
+   "output": [],
+   "parallel_tool_calls": true,
+   "presence_penalty": 0.0,
+   "previous_response_id": null,
+   "prompt_cache_key": null,
+   "prompt_cache_retention": "in_memory",
+   "reasoning": {
+    "context": "current_turn",
+    "effort": "high",
+    "mode": "standard",
+    "summary": "detailed"
+   },
+   "safety_identifier": null,
+   "service_tier": "auto",
+   "store": false,
+   "temperature": 1.0,
+   "text": {
+    "format": {
+     "type": "text"
+    },
+    "verbosity": "medium"
+   },
+   "tool_choice": "auto",
+   "tool_usage": {
+    "image_gen": {
+     "input_tokens": 0,
+     "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+     },
+     "output_tokens": 0,
+     "output_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+     },
+     "total_tokens": 0
+    },
+    "web_search": {
+     "num_requests": 0
+    }
+   },
+   "tools": [],
+   "top_logprobs": 0,
+   "top_p": 0.98,
+   "truncation": "disabled",
+   "usage": null,
+   "user": null,
+   "metadata": {}
+  },
+  "sequence_number": 1
+ },
+ {
+  "type": "response.output_item.added",
+  "item": {
+   "id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+   "type": "reasoning",
+   "content": [],
+   "encrypted_content": "ENCRYPTED",
+   "summary": []
+  },
+  "output_index": 0,
+  "sequence_number": 2
+ },
+ {
+  "type": "response.reasoning_summary_part.added",
+  "item_id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+  "output_index": 0,
+  "part": {
+   "type": "summary_text",
+   "text": ""
+  },
+  "sequence_number": 3,
+  "summary_index": 0
+ },
+ {
+  "type": "response.reasoning_summary_text.delta",
+  "delta": "**Verifying if 91 is prime**\n\nI need to confirm whether 91 is a prime number, which only needs a brief explanation. I’m aiming for an answer with exactly",
+  "item_id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+  "obfuscation": "9",
+  "output_index": 0,
+  "sequence_number": 4,
+  "summary_index": 0
+ },
+ {
+  "type": "response.reasoning_summary_text.delta",
+  "delta": " three words: “No, it isn’t.” That looks perfect since “No” counts as one word, and together “it isn",
+  "item_id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+  "obfuscation": "N6ykqyiHTt",
+  "output_index": 0,
+  "sequence_number": 5,
+  "summary_index": 0
+ },
+ {
+  "type": "response.reasoning_summary_text.delta",
+  "delta": "’t” makes three. I just want to ensure accuracy here since 91 equals 7 multiplied by 13, which definitely shows it's not prime.",
+  "item_id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+  "obfuscation": "8bVyaBliWmgWQ2",
+  "output_index": 0,
+  "sequence_number": 6,
+  "summary_index": 0
+ },
+ {
+  "type": "response.reasoning_summary_text.done",
+  "item_id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+  "output_index": 0,
+  "sequence_number": 7,
+  "summary_index": 0,
+  "text": "**Verifying if 91 is prime**\n\nI need to confirm whether 91 is a prime number, which only needs a brief explanation. I’m aiming for an answer with exactly three words: “No, it isn’t.” That looks perfect since “No” counts as one word, and together “it isn’t” makes three. I just want to ensure accuracy here since 91 equals 7 multiplied by 13, which definitely shows it's not prime."
+ },
+ {
+  "type": "response.reasoning_summary_part.done",
+  "item_id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+  "output_index": 0,
+  "part": {
+   "type": "summary_text",
+   "text": "**Verifying if 91 is prime**\n\nI need to confirm whether 91 is a prime number, which only needs a brief explanation. I’m aiming for an answer with exactly three words: “No, it isn’t.” That looks perfect since “No” counts as one word, and together “it isn’t” makes three. I just want to ensure accuracy here since 91 equals 7 multiplied by 13, which definitely shows it's not prime."
+  },
+  "sequence_number": 8,
+  "summary_index": 0
+ },
+ {
+  "type": "response.output_item.done",
+  "item": {
+   "id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+   "type": "reasoning",
+   "content": [],
+   "encrypted_content": "ENCRYPTED",
+   "summary": [
+    {
+     "type": "summary_text",
+     "text": "**Verifying if 91 is prime**\n\nI need to confirm whether 91 is a prime number, which only needs a brief explanation. I’m aiming for an answer with exactly three words: “No, it isn’t.” That looks perfect since “No” counts as one word, and together “it isn’t” makes three. I just want to ensure accuracy here since 91 equals 7 multiplied by 13, which definitely shows it's not prime."
+    }
+   ]
+  },
+  "output_index": 0,
+  "sequence_number": 9
+ },
+ {
+  "type": "response.output_item.added",
+  "item": {
+   "id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+   "type": "message",
+   "status": "in_progress",
+   "content": [],
+   "phase": "final_answer",
+   "role": "assistant"
+  },
+  "output_index": 1,
+  "sequence_number": 10
+ },
+ {
+  "type": "response.content_part.added",
+  "content_index": 0,
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "output_index": 1,
+  "part": {
+   "type": "output_text",
+   "annotations": [],
+   "logprobs": [],
+   "text": ""
+  },
+  "sequence_number": 11
+ },
+ {
+  "type": "response.output_text.delta",
+  "content_index": 0,
+  "delta": "No",
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "logprobs": [],
+  "obfuscation": "5CS6AnQTDHhjlj",
+  "output_index": 1,
+  "sequence_number": 12
+ },
+ {
+  "type": "response.output_text.delta",
+  "content_index": 0,
+  "delta": ",",
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "logprobs": [],
+  "obfuscation": "bgrgEtf94jDaZ65",
+  "output_index": 1,
+  "sequence_number": 13
+ },
+ {
+  "type": "response.output_text.delta",
+  "content_index": 0,
+  "delta": " it",
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "logprobs": [],
+  "obfuscation": "WqDPRCnJP6lgV",
+  "output_index": 1,
+  "sequence_number": 14
+ },
+ {
+  "type": "response.output_text.delta",
+  "content_index": 0,
+  "delta": " isn't",
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "logprobs": [],
+  "obfuscation": "ZbXkNEeEme",
+  "output_index": 1,
+  "sequence_number": 15
+ },
+ {
+  "type": "response.output_text.delta",
+  "content_index": 0,
+  "delta": ".",
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "logprobs": [],
+  "obfuscation": "Iq2arfEVkGDfVJy",
+  "output_index": 1,
+  "sequence_number": 16
+ },
+ {
+  "type": "response.output_text.done",
+  "content_index": 0,
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "logprobs": [],
+  "output_index": 1,
+  "sequence_number": 17,
+  "text": "No, it isn't."
+ },
+ {
+  "type": "response.content_part.done",
+  "content_index": 0,
+  "item_id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+  "output_index": 1,
+  "part": {
+   "type": "output_text",
+   "annotations": [],
+   "logprobs": [],
+   "text": "No, it isn't."
+  },
+  "sequence_number": 18
+ },
+ {
+  "type": "response.output_item.done",
+  "item": {
+   "id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+   "type": "message",
+   "status": "completed",
+   "content": [
+    {
+     "type": "output_text",
+     "annotations": [],
+     "logprobs": [],
+     "text": "No, it isn't."
+    }
+   ],
+   "phase": "final_answer",
+   "role": "assistant"
+  },
+  "output_index": 1,
+  "sequence_number": 19
+ },
+ {
+  "type": "response.completed",
+  "response": {
+   "id": "resp_0d3a471fa090ad9e016aca0d2399c0819485b0e4cc73ddc704",
+   "object": "response",
+   "created_at": 1791626531,
+   "status": "completed",
+   "background": false,
+   "completed_at": 1791626535,
+   "content_filters": [
+    {
+     "blocked": false,
+     "source_type": "prompt",
+     "content_filter_raw": [],
+     "content_filter_results": {
+      "hate": {
+       "filtered": false,
+       "severity": "safe"
+      },
+      "sexual": {
+       "filtered": false,
+       "severity": "safe"
+      },
+      "violence": {
+       "filtered": false,
+       "severity": "safe"
+      },
+      "self_harm": {
+       "filtered": false,
+       "severity": "safe"
+      }
+     },
+     "content_filter_offsets": {
+      "start_offset": 0,
+      "end_offset": 884,
+      "check_offset": 0
+     }
+    },
+    {
+     "blocked": false,
+     "source_type": "completion",
+     "content_filter_raw": [],
+     "content_filter_results": {
+      "protected_material_code": {
+       "detected": false,
+       "filtered": false
+      },
+      "hate": {
+       "filtered": false,
+       "severity": "safe"
+      },
+      "sexual": {
+       "filtered": false,
+       "severity": "safe"
+      },
+      "violence": {
+       "filtered": false,
+       "severity": "safe"
+      },
+      "self_harm": {
+       "filtered": false,
+       "severity": "safe"
+      }
+     },
+     "content_filter_offsets": {
+      "start_offset": 0,
+      "end_offset": 295,
+      "check_offset": 0
+     }
+    }
+   ],
+   "error": null,
+   "frequency_penalty": 0.0,
+   "incomplete_details": null,
+   "instructions": null,
+   "max_output_tokens": 2000,
+   "max_tool_calls": null,
+   "model": "gpt-5.4",
+   "moderation": null,
+   "output": [
+    {
+     "id": "rs_0d3a471fa090ad9e016aca0d2420688194b21d4002036aa6c4",
+     "type": "reasoning",
+     "content": [],
+     "encrypted_content": "ENCRYPTED",
+     "summary": [
+      {
+       "type": "summary_text",
+       "text": "**Verifying if 91 is prime**\n\nI need to confirm whether 91 is a prime number, which only needs a brief explanation. I’m aiming for an answer with exactly three words: “No, it isn’t.” That looks perfect since “No” counts as one word, and together “it isn’t” makes three. I just want to ensure accuracy here since 91 equals 7 multiplied by 13, which definitely shows it's not prime."
+      }
+     ]
+    },
+    {
+     "id": "msg_0d3a471fa090ad9e016aca0d275f68819480ff449cc8f492ba",
+     "type": "message",
+     "status": "completed",
+     "content": [
+      {
+       "type": "output_text",
+       "annotations": [],
+       "logprobs": [],
+       "text": "No, it isn't."
+      }
+     ],
+     "phase": "final_answer",
+     "role": "assistant"
+    }
+   ],
+   "parallel_tool_calls": true,
+   "presence_penalty": 0.0,
+   "previous_response_id": null,
+   "prompt_cache_key": null,
+   "prompt_cache_retention": "in_memory",
+   "reasoning": {
+    "context": "current_turn",
+    "effort": "high",
+    "mode": "standard",
+    "summary": "detailed"
+   },
+   "safety_identifier": null,
+   "service_tier": "default",
+   "store": false,
+   "temperature": 1.0,
+   "text": {
+    "format": {
+     "type": "text"
+    },
+    "verbosity": "medium"
+   },
+   "tool_choice": "auto",
+   "tool_usage": {
+    "image_gen": {
+     "input_tokens": 0,
+     "input_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+     },
+     "output_tokens": 0,
+     "output_tokens_details": {
+      "image_tokens": 0,
+      "text_tokens": 0
+     },
+     "total_tokens": 0
+    },
+    "web_search": {
+     "num_requests": 0
+    }
+   },
+   "tools": [],
+   "top_logprobs": 0,
+   "top_p": 0.98,
+   "truncation": "disabled",
+   "usage": {
+    "input_tokens": 19,
+    "input_tokens_details": {
+     "cache_write_tokens": 0,
+     "cached_tokens": 0
+    },
+    "output_tokens": 91,
+    "output_tokens_details": {
+     "reasoning_tokens": 80
+    },
+    "total_tokens": 110
+   },
+   "user": null,
+   "metadata": {}
+  },
+  "sequence_number": 20
+ }
+]

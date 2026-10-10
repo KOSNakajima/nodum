@@ -231,6 +231,7 @@ export interface AIScopeStatus {
   configured: boolean;
   active_provider: string | null;
   active_model: string;
+  reasoning_supported: boolean;
   credentials: AICredentialInfo[];
 }
 
@@ -242,6 +243,8 @@ export interface AIStatus {
   configured: boolean;
   active_provider: string | null;
   active_model: string;
+  /** Whether the chat's thinking controls apply to the active provider. */
+  reasoning_supported: boolean;
   /** The account's keys (kept at the top level for older callers). */
   credentials: AICredentialInfo[];
   account: AIScopeStatus;
@@ -259,6 +262,8 @@ export type AIAction =
   | { kind: "created" | "updated" | "read"; title: string; note_id: string }
   | { kind: "edited"; title: string; note_id: string; removed: number; added: number }
   | { kind: "context"; title: string; note_id: string; from_line?: number; to_line?: number }
+  /** One round of thinking: how long, and the model's summary of it. */
+  | { kind: "thought"; seconds: number; text: string }
   | { kind: "searched"; query: string; count: number }
   | { kind: "visited"; title: string; url: string; chars?: number; truncated?: boolean }
   | { kind: "failed"; tool: string; detail: string; error: string };
@@ -283,12 +288,16 @@ export interface AIVaultChatRequest {
   note_id?: string;
   /** 1-based, inclusive. */
   selection?: { from_line: number; to_line: number; text: string };
+  /** Thinking on, at this effort; omitted = off (the model's own default). */
+  reasoning_effort?: "low" | "medium" | "high" | "xhigh";
 }
 
 /** One server-sent event of a streamed vault chat turn. */
 export type AIStreamEvent =
   | { type: "status"; text: string; tool?: string }
   | { type: "delta"; text: string }
+  /** A piece of the reasoning summary, while the model thinks. */
+  | { type: "thinking"; text: string }
   | { type: "action"; action: AIAction }
   | { type: "reset" }
   | ({ type: "done" } & AIChatReply)

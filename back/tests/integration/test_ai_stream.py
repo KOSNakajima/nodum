@@ -171,3 +171,76 @@ async def test_a_failure_after_a_tool_ran_leaves_no_empty_thread(
         await client.get(f"/api/v1/ai/vaults/{account['vault_id']}/conversations", headers=account["headers"])
     ).json()["data"]
     assert listed == [], listed
+
+
+async def test_thinking_is_streamed_and_recorded_as_a_thought_step(
+    client: AsyncClient, account: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: list = []
+
+    async def fake_stream_turn(**kw):
+        seen.append(kw)
+        yield ai_providers.Reasoning("**Weighing it**\n\n")
+        yield ai_providers.Reasoning("It is 17 x 23.")
+        yield "Not prime."
+        yield ai_providers.Turn(text="Not prime.", tool_calls=[], raw_message=None)
+
+    monkeypatch.setattr(ai_providers, "stream_turn", fake_stream_turn)
+
+    async def turn(body: dict) -> list:
+        async with client.stream(
+            "POST", f"/api/v1/ai/vaults/{account['vault_id']}/chat/stream", json=body, headers=account["headers"]
+        ) as resp:
+            assert resp.status_code == 200, await resp.aread()
+            return _events((await resp.aread()).decode())
+
+    events = await turn({"message": "Is 391 prime?", "reasoning_effort": "high"})
+    assert seen[0]["reasoning_effort"] == "high"
+    kinds = [e["type"] for e in events]
+    # Thinking streams first, then the thought step, then the reply.
+    assert kinds.index("thinking") < kinds.index("action") < kinds.index("delta")
+    thought = events[-1]["actions"][0]
+    assert thought["kind"] == "thought" and thought["seconds"] >= 1
+    assert thought["text"] == "**Weighing it**\n\nIt is 17 x 23."
+
+    # Thinking off: reasoning that arrives anyway is neither streamed nor kept.
+    events = await turn({"message": "again"})
+    assert seen[1]["reasoning_effort"] is None
+    assert "thinking" not in [e["type"] for e in events]
+    assert events[-1]["actions"] == []
+
+
+@pytest.mark.parametrize(
+    ("summary", "reasoning_tokens", "recorded"),
+    [
+        ("", 0, None),  # it did not reason (easy question): no thought at all
+        ("", 22, ""),  # it reasoned but shared no summary: the step, without text
+    ],
+)
+async def test_a_thought_is_recorded_only_when_the_model_reasoned(
+    client: AsyncClient,
+    account: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    summary: str,
+    reasoning_tokens: int,
+    recorded: str | None,
+) -> None:
+    async def fake_stream_turn(**kw):
+        if summary:
+            yield ai_providers.Reasoning(summary)
+        yield "Hello."
+        yield ai_providers.Turn(text="Hello.", tool_calls=[], raw_message=None, reasoning_tokens=reasoning_tokens)
+
+    monkeypatch.setattr(ai_providers, "stream_turn", fake_stream_turn)
+    async with client.stream(
+        "POST",
+        f"/api/v1/ai/vaults/{account['vault_id']}/chat/stream",
+        json={"message": "hi", "reasoning_effort": "high"},
+        headers=account["headers"],
+    ) as resp:
+        events = _events((await resp.aread()).decode())
+    thoughts = [a for a in events[-1]["actions"] if a["kind"] == "thought"]
+    if recorded is None:
+        assert thoughts == []
+    else:
+        assert [t["text"] for t in thoughts] == [recorded]

@@ -100,7 +100,7 @@ async def test_the_stored_history_is_what_the_provider_sees_next_turn(
     )
     # The client sent one message; the server rebuilt the whole transcript.
     second_call = stub_provider[1]
-    assert [m["content"] for m in second_call] == ["first", "stub reply", "second"]
+    assert [m.content for m in second_call] == ["first", "stub reply", "second"]
 
     full = await client.get(f"/api/v1/ai/vaults/{vault}/conversations/{conversation_id}", headers=headers)
     assert len(full.json()["data"]["messages"]) == 4

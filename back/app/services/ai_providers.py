@@ -1,14 +1,19 @@
-"""Adapters for the AI providers a user can bring a key for.
+"""Adapters for the AI providers a user can bring a key for — on LangChain.
 
-One shape in, one shape out: a list of `{role, content}` messages and a system
-prompt go in, an assistant string comes back. Each provider gets the smallest
-correct request for a chat completion — streamed when the panel wants it — and no provider SDKs
-(four SDKs for four thin HTTP calls is a poor trade, and `httpx` is already a
-dependency).
+One shape in, one shape out: messages and a system prompt go in; text deltas,
+tool calls and (with thinking on) reasoning come out. LangChain's chat models
+carry each provider's wire format — tool-call schemas, message history,
+streaming, the Responses API — so adding a provider or a capability is a
+constructor argument here rather than another hand-written protocol.
 
-Everything here talks to a THIRD PARTY with the USER'S key. So: never log the
-key, never echo a provider's raw error body verbatim to the client (it can
-contain the key), and always bound the request in time.
+What LangChain does not do for us stays here, because everything in this
+module talks to a THIRD PARTY with the USER'S key:
+
+- a user-supplied base_url is checked against private networks before every
+  request (`_checked_base_url`);
+- failures are mapped to fixed messages and never echo a provider's error body,
+  which can quote the key (`_provider_error`);
+- every request is time-bounded and there are no silent retries.
 """
 
 import json
@@ -17,6 +22,20 @@ from dataclasses import dataclass
 from typing import Any
 
 import httpx
+from langchain_anthropic import ChatAnthropic
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+    message_chunk_to_message,
+)
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 from app.settings import get_settings
 from app.utils.url_guard import UnsafeUrlError, assert_safe_url
@@ -101,35 +120,55 @@ async def _checked_base_url(provider: str, override: str | None) -> str:
     return override.rstrip("/")
 
 
-def _safe_error(provider: str, response: httpx.Response) -> ProviderError:
-    """Map a provider failure to something we can show without leaking the key.
-
-    Provider error bodies quote the request — including the key — often enough
-    that echoing them is a real disclosure risk. Status codes are enough to say
-    something useful.
-    """
-    if response.status_code in (401, 403):
+def _status_error(provider: str, status: int, param: str | None = None) -> ProviderError:
+    """A fixed, key-free message for an HTTP failure. Status codes — and, for a
+    400, the name of the parameter the provider objected to, which is always
+    one of ours — are enough to say something useful."""
+    if status in (401, 403):
         return ProviderError("The provider rejected the API key. Check it in Settings → AI.")
-    if response.status_code == 404:
+    if status == 404:
         return ProviderError("The provider does not know that model. Pick another in Settings → AI.")
-    if response.status_code == 429:
+    if status == 400 and param in ("reasoning_effort", "reasoning", "reasoning.effort"):
+        return ProviderError(
+            "This model does not accept that reasoning setting. Turn thinking off or lower the effort."
+        )
+    if status == 429:
         return ProviderError("The provider is rate-limiting this key. Try again shortly.")
-    if response.status_code >= 500:
-        return ProviderError(f"{provider} is having trouble right now ({response.status_code}).")
-    return ProviderError(f"The provider rejected the request ({response.status_code}).")
+    if status >= 500:
+        return ProviderError(f"{provider} is having trouble right now ({status}).")
+    return ProviderError(f"The provider rejected the request ({status}).")
 
 
-def _token_limit(provider: str, max_tokens: int) -> dict[str, int]:
-    """The output cap, under the name this chat-completions endpoint accepts.
+def _provider_error(provider: str, exc: BaseException) -> ProviderError:
+    """Map whatever the provider SDK under LangChain raised to a ProviderError.
 
-    OpenAI deprecated `max_tokens` for `max_completion_tokens`, and reasoning
-    models (o-series, GPT-5) — including Azure OpenAI deployments reached
-    through its v1 endpoint — reject the old name with a 400. Qwen's
-    compatible mode only documents `max_tokens`, so it keeps that.
+    The OpenAI and Anthropic SDKs raise `APIStatusError` (`status_code`, and
+    OpenAI's `param`); google-genai raises `APIError` (`code`). Their messages
+    can quote the request, so only those fields are read — never `str(exc)`.
     """
-    if provider == "openai":
-        return {"max_completion_tokens": max_tokens}
-    return {"max_tokens": max_tokens}
+    if isinstance(exc, ProviderError):
+        return exc
+    status = getattr(exc, "status_code", None)
+    if not isinstance(status, int):
+        status = getattr(exc, "code", None)
+    if isinstance(status, int) and 400 <= status < 600:
+        param = getattr(exc, "param", None)
+        return _status_error(provider, status, param if isinstance(param, str) else None)
+    name = type(exc).__name__.lower()
+    if isinstance(exc, (httpx.TimeoutException, TimeoutError)) or "timeout" in name:
+        return ProviderError("The provider took too long to answer.")
+    return ProviderError("Could not reach the provider.")
+
+
+#: Providers whose chat request takes a reasoning effort (the levels are the
+#: API's VaultChatRequest.reasoning_effort). OpenAI-compatible endpoints, Azure
+#: included; Claude's and Gemini's thinking controls are a constructor argument
+#: away now, but untested against real keys, so not offered yet.
+REASONING_PROVIDERS = frozenset({"openai"})
+#: Reasoning tokens count against the output cap, so a reply with reasoning on
+#: needs far more room than 2048 or it is all thinking and no answer. Billing
+#: follows what is used, not this ceiling.
+REASONING_MAX_TOKENS = 16_384
 
 
 @dataclass
@@ -142,39 +181,134 @@ class ToolCall:
 
 
 @dataclass
+class Reasoning:
+    """A piece of the model's reasoning summary, streamed while it thinks."""
+
+    text: str
+
+
+@dataclass
 class Turn:
     """One provider response: some text, and/or some tool calls."""
 
     text: str
     tool_calls: list[ToolCall]
-    # The assistant message exactly as the provider wants it echoed back in the
-    # next request — shapes differ enough that reconstructing it is error-prone.
+    # The assistant message to echo back in the next request: a LangChain
+    # AIMessage, which carries whatever the provider needs (tool-call ids,
+    # Anthropic content blocks, Gemini parts) without us rebuilding it.
     raw_message: Any = None
+    # How many tokens the model spent reasoning — 0 when it chose not to, which
+    # reasoning models do for easy questions even with thinking on.
+    reasoning_tokens: int = 0
 
 
-def _tools_for(provider: str, tools: list[dict[str, Any]]) -> Any:
-    """Translate our neutral tool declarations into the provider's shape."""
-    if provider == "anthropic":
-        return [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in tools]
-    if provider == "gemini":
-        return [
-            {
-                "functionDeclarations": [
-                    {"name": t["name"], "description": t["description"], "parameters": t["parameters"]} for t in tools
-                ]
-            }
-        ]
+def _tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Our neutral declarations as OpenAI function tools — the form every
+    LangChain chat model's bind_tools converts to its provider's own."""
     return [
         {
             "type": "function",
-            "function": {
-                "name": t["name"],
-                "description": t["description"],
-                "parameters": t["parameters"],
-            },
+            "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]},
         }
         for t in tools
     ]
+
+
+def _chat_model(
+    provider: str,
+    *,
+    api_key: str,
+    model: str,
+    url_root: str,
+    custom_base_url: bool,
+    max_tokens: int,
+    reasoning_effort: str | None,
+    http_client: httpx.AsyncClient,
+) -> BaseChatModel:
+    """The LangChain chat model for one request: bounded in time, no retries,
+    pointed at the checked root."""
+    timeout = float(get_settings().AI_REQUEST_TIMEOUT)
+    key = SecretStr(api_key)
+    if provider == "anthropic":
+        return ChatAnthropic(
+            model=model,
+            api_key=key,
+            base_url=url_root,
+            max_tokens=max_tokens,
+            default_request_timeout=timeout,
+            max_retries=0,
+        )
+    if provider == "gemini":
+        # google-genai builds its own versioned paths, so only a user's
+        # override (already checked) is passed through.
+        return ChatGoogleGenerativeAI(
+            model=model,
+            google_api_key=key,
+            base_url=url_root if custom_base_url else None,
+            max_output_tokens=max_tokens,
+            timeout=timeout,
+            max_retries=0,
+        )
+    options: dict[str, Any] = {
+        "model": model,
+        "api_key": key,
+        "base_url": url_root,
+        "timeout": timeout,
+        "max_retries": 0,
+        # Ours rather than the SDK's default: the same time bound, closed when
+        # the request ends, and the seam the tests swap the transport through.
+        "http_async_client": http_client,
+    }
+    if provider == "openai":
+        # Sent as max_completion_tokens — reasoning models (GPT-5, o-series,
+        # Azure's v1 endpoint) reject the older max_tokens.
+        options["max_tokens"] = max_tokens
+        if reasoning_effort and provider in REASONING_PROVIDERS:
+            # Thinking on: the Responses API, the only OpenAI endpoint that
+            # returns a reasoning summary to show. store=False keeps the
+            # conversation off the provider; the reasoning it needs between
+            # tool rounds travels back encrypted instead.
+            options["use_responses_api"] = True
+            options["reasoning"] = {"effort": reasoning_effort, "summary": "auto"}
+            options["store"] = False
+            options["include"] = ["reasoning.encrypted_content"]
+    else:
+        # Qwen's compatible mode documents only the older name.
+        options["extra_body"] = {"max_tokens": max_tokens}
+    return ChatOpenAI(**options)
+
+
+async def _model_for(
+    provider: str,
+    *,
+    api_key: str,
+    model: str,
+    base_url: str | None,
+    max_tokens: int,
+    http_client: httpx.AsyncClient,
+    reasoning_effort: str | None = None,
+) -> BaseChatModel:
+    if provider not in PROVIDERS:
+        raise ProviderError(f"Unknown provider: {provider}")
+    url_root = await _checked_base_url(provider, base_url)
+    return _chat_model(
+        provider,
+        api_key=api_key,
+        model=model,
+        url_root=url_root,
+        custom_base_url=bool(base_url),
+        max_tokens=max_tokens,
+        reasoning_effort=reasoning_effort,
+        http_client=http_client,
+    )
+
+
+def _http_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(timeout=float(get_settings().AI_REQUEST_TIMEOUT))
+
+
+def _history(system: str, messages: list[Any]) -> list[BaseMessage]:
+    return ([SystemMessage(system)] if system else []) + list(messages)
 
 
 async def chat(
@@ -186,192 +320,56 @@ async def chat(
     system: str = "",
     base_url: str | None = None,
     max_tokens: int = 2048,
+    reasoning_effort: str | None = None,
 ) -> str:
-    """Send one turn and return the assistant's reply text."""
-    if provider not in PROVIDERS:
-        raise ProviderError(f"Unknown provider: {provider}")
-    url_root = await _checked_base_url(provider, base_url)
-    timeout = httpx.Timeout(float(get_settings().AI_REQUEST_TIMEOUT))
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        if provider == "anthropic":
-            payload: dict[str, Any] = {
-                "model": model,
-                "max_tokens": max_tokens,
-                "messages": messages,
-            }
-            if system:
-                payload["system"] = system
-            response = await client.post(
-                f"{url_root}/v1/messages",
-                json=payload,
-                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-            )
-            if response.status_code >= 400:
-                raise _safe_error(provider, response)
-            blocks = response.json().get("content", [])
-            return "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-
-        if provider == "gemini":
-            contents = [
-                {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
-                for m in messages
-            ]
-            payload = {"contents": contents}
-            if system:
-                payload["systemInstruction"] = {"parts": [{"text": system}]}
-            response = await client.post(
-                f"{url_root}/models/{model}:generateContent",
-                json=payload,
-                headers={"x-goog-api-key": api_key},
-            )
-            if response.status_code >= 400:
-                raise _safe_error(provider, response)
-            candidates = response.json().get("candidates", [])
-            if not candidates:
-                return ""
-            parts = candidates[0].get("content", {}).get("parts", [])
-            return "".join(p.get("text", "") for p in parts).strip()
-
-        # openai and qwen both speak the OpenAI chat-completions shape; Qwen's
-        # compatible-mode endpoint is why it needs no adapter of its own.
-        chat_messages = ([{"role": "system", "content": system}] if system else []) + messages
-        response = await client.post(
-            f"{url_root}/chat/completions",
-            json={"model": model, "messages": chat_messages, **_token_limit(provider, max_tokens)},
-            headers={"Authorization": f"Bearer {api_key}"},
+    """Send one turn of `{role, content}` messages and return the reply text."""
+    async with _http_client() as http:
+        return await _chat(
+            provider,
+            http,
+            api_key=api_key,
+            model=model,
+            messages=messages,
+            system=system,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
         )
-        if response.status_code >= 400:
-            raise _safe_error(provider, response)
-        choices = response.json().get("choices", [])
-        if not choices:
-            return ""
-        return (choices[0].get("message", {}).get("content") or "").strip()
 
 
-async def turn(
-    *,
+async def _chat(
     provider: str,
+    http: httpx.AsyncClient,
+    *,
     api_key: str,
     model: str,
-    messages: list[Any],
+    messages: list[dict[str, str]],
     system: str,
-    tools: list[dict[str, Any]],
-    base_url: str | None = None,
-    max_tokens: int = 2048,
-) -> Turn:
-    """One round-trip WITH tools available.
-
-    `messages` here is the provider's own conversation array (built up across
-    rounds by the caller), not our neutral shape: once tool results are in the
-    history, every provider wants them back in its own format.
-    """
-    if provider not in PROVIDERS:
-        raise ProviderError(f"Unknown provider: {provider}")
-    url_root = await _checked_base_url(provider, base_url)
-    timeout = httpx.Timeout(float(get_settings().AI_REQUEST_TIMEOUT))
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        if provider == "anthropic":
-            payload: dict[str, Any] = {
-                "model": model,
-                "max_tokens": max_tokens,
-                "messages": messages,
-                "tools": _tools_for(provider, tools),
-            }
-            if system:
-                payload["system"] = system
-            response = await client.post(
-                f"{url_root}/v1/messages",
-                json=payload,
-                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-            )
-            if response.status_code >= 400:
-                raise _safe_error(provider, response)
-            body = response.json()
-            blocks = body.get("content", [])
-            text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-            calls = [
-                ToolCall(id=b.get("id", ""), name=b.get("name", ""), arguments=b.get("input") or {})
-                for b in blocks
-                if b.get("type") == "tool_use"
-            ]
-            return Turn(text=text, tool_calls=calls, raw_message={"role": "assistant", "content": blocks})
-
-        if provider == "gemini":
-            payload = {"contents": messages, "tools": _tools_for(provider, tools)}
-            if system:
-                payload["systemInstruction"] = {"parts": [{"text": system}]}
-            response = await client.post(
-                f"{url_root}/models/{model}:generateContent",
-                json=payload,
-                headers={"x-goog-api-key": api_key},
-            )
-            if response.status_code >= 400:
-                raise _safe_error(provider, response)
-            candidates = response.json().get("candidates", [])
-            if not candidates:
-                return Turn(text="", tool_calls=[], raw_message=None)
-            parts = candidates[0].get("content", {}).get("parts", [])
-            text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
-            calls = [
-                # Gemini has no call ids; the function name is the correlator.
-                ToolCall(
-                    id=p["functionCall"].get("name", ""),
-                    name=p["functionCall"].get("name", ""),
-                    arguments=p["functionCall"].get("args") or {},
-                )
-                for p in parts
-                if "functionCall" in p
-            ]
-            return Turn(text=text, tool_calls=calls, raw_message={"role": "model", "parts": parts})
-
-        # openai / qwen
-        response = await client.post(
-            f"{url_root}/chat/completions",
-            json={
-                "model": model,
-                "messages": ([{"role": "system", "content": system}] if system else []) + messages,
-                **_token_limit(provider, max_tokens),
-                "tools": _tools_for(provider, tools),
-            },
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-        if response.status_code >= 400:
-            raise _safe_error(provider, response)
-        choices = response.json().get("choices", [])
-        if not choices:
-            return Turn(text="", tool_calls=[], raw_message=None)
-        message = choices[0].get("message", {}) or {}
-        calls = []
-        for call in message.get("tool_calls") or []:
-            function = call.get("function", {}) or {}
-            try:
-                arguments = json.loads(function.get("arguments") or "{}")
-            except json.JSONDecodeError:
-                arguments = {}
-            calls.append(ToolCall(id=call.get("id", ""), name=function.get("name", ""), arguments=arguments))
-        return Turn(text=(message.get("content") or "").strip(), tool_calls=calls, raw_message=message)
-
-
-# ── Streaming ────────────────────────────────────────────────────────────────
-
-
-async def _sse_data(response: httpx.Response) -> AsyncIterator[str]:
-    """Yield the `data:` payloads of an SSE stream, one event at a time."""
-    buffer: list[str] = []
-    async for line in response.aiter_lines():
-        if line == "":
-            if buffer:
-                yield "\n".join(buffer)
-                buffer = []
-            continue
-        if line.startswith(":"):
-            continue
-        if line.startswith("data:"):
-            buffer.append(line[5:].lstrip())
-    if buffer:
-        yield "\n".join(buffer)
+    base_url: str | None,
+    max_tokens: int,
+    reasoning_effort: str | None,
+) -> str:
+    llm = await _model_for(
+        provider,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        max_tokens=max_tokens,
+        reasoning_effort=reasoning_effort,
+        http_client=http,
+    )
+    history = _history(
+        system,
+        [
+            user_message(provider, m["content"]) if m["role"] == "user" else assistant_message(provider, m["content"])
+            for m in messages
+        ],
+    )
+    try:
+        reply = await llm.ainvoke(history)
+    except Exception as exc:
+        raise _provider_error(provider, exc) from exc
+    return reply.text.strip()
 
 
 async def stream_turn(
@@ -384,217 +382,68 @@ async def stream_turn(
     tools: list[dict[str, Any]],
     base_url: str | None = None,
     max_tokens: int = 2048,
-) -> AsyncIterator[str | Turn]:
-    """`turn`, streamed: yields text deltas as they arrive and, last, the Turn.
+    reasoning_effort: str | None = None,
+) -> AsyncIterator[str | Reasoning | Turn]:
+    """One round with tools available, streamed: yields text deltas (str) and
+    reasoning-summary pieces (Reasoning) as they arrive and, last, the Turn.
 
-    Tool calls stream too (as argument fragments) and are assembled before the
-    Turn is yielded, so a turn that ends in tool calls produces no text deltas
-    worth showing and the caller simply runs the tools. The raw assistant
-    message is rebuilt in the provider's shape so the next round can echo it.
+    `messages` is the LangChain conversation built up across rounds by the
+    caller (`user_message`, `Turn.raw_message`, `tool_result_message`).
+    LangChain assembles streamed tool-call fragments, so a turn that ends in
+    tool calls yields its Turn with them parsed and the caller runs them.
     """
-    if provider not in PROVIDERS:
-        raise ProviderError(f"Unknown provider: {provider}")
-    url_root = await _checked_base_url(provider, base_url)
-    timeout = httpx.Timeout(float(get_settings().AI_REQUEST_TIMEOUT))
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        if provider == "anthropic":
-            payload: dict[str, Any] = {
-                "model": model,
-                "max_tokens": max_tokens,
-                "messages": messages,
-                "tools": _tools_for(provider, tools),
-                "stream": True,
-            }
-            if system:
-                payload["system"] = system
-            async with client.stream(
-                "POST",
-                f"{url_root}/v1/messages",
-                json=payload,
-                headers={"x-api-key": api_key, "anthropic-version": "2023-06-01"},
-            ) as response:
-                if response.status_code >= 400:
-                    await response.aread()
-                    raise _safe_error(provider, response)
-                blocks: list[dict[str, Any]] = []
-                partial_json: dict[int, str] = {}
-                async for data in _sse_data(response):
-                    try:
-                        event = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    kind = event.get("type")
-                    if kind == "content_block_start":
-                        block = dict(event.get("content_block") or {})
-                        index = int(event.get("index", len(blocks)))
-                        while len(blocks) <= index:
-                            blocks.append({})
-                        if block.get("type") == "tool_use":
-                            block["input"] = {}
-                            partial_json[index] = ""
-                        elif block.get("type") == "text":
-                            block["text"] = block.get("text", "")
-                        blocks[index] = block
-                    elif kind == "content_block_delta":
-                        index = int(event.get("index", 0))
-                        delta = event.get("delta") or {}
-                        if index >= len(blocks):
-                            continue
-                        if delta.get("type") == "text_delta":
-                            piece = delta.get("text", "")
-                            blocks[index]["text"] = blocks[index].get("text", "") + piece
-                            if piece:
-                                yield piece
-                        elif delta.get("type") == "input_json_delta":
-                            partial_json[index] = partial_json.get(index, "") + delta.get("partial_json", "")
-                    elif kind == "content_block_stop":
-                        index = int(event.get("index", 0))
-                        if index in partial_json:
-                            try:
-                                blocks[index]["input"] = json.loads(partial_json[index] or "{}")
-                            except json.JSONDecodeError:
-                                blocks[index]["input"] = {}
-                    elif kind == "error":
-                        raise ProviderError("The provider reported an error mid-stream.")
-                text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
-                calls = [
-                    ToolCall(id=b.get("id", ""), name=b.get("name", ""), arguments=b.get("input") or {})
-                    for b in blocks
-                    if b.get("type") == "tool_use"
-                ]
-                yield Turn(text=text, tool_calls=calls, raw_message={"role": "assistant", "content": blocks})
-                return
-
-        if provider == "gemini":
-            payload = {"contents": messages, "tools": _tools_for(provider, tools)}
-            if system:
-                payload["systemInstruction"] = {"parts": [{"text": system}]}
-            async with client.stream(
-                "POST",
-                f"{url_root}/models/{model}:streamGenerateContent?alt=sse",
-                json=payload,
-                headers={"x-goog-api-key": api_key},
-            ) as response:
-                if response.status_code >= 400:
-                    await response.aread()
-                    raise _safe_error(provider, response)
-                parts: list[dict[str, Any]] = []
-                text_buf = ""
-                async for data in _sse_data(response):
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    candidates = chunk.get("candidates") or []
-                    if not candidates:
-                        continue
-                    for part in candidates[0].get("content", {}).get("parts", []) or []:
-                        if "text" in part:
-                            piece = part.get("text", "")
-                            text_buf += piece
-                            if piece:
-                                yield piece
-                        elif "functionCall" in part:
-                            parts.append(part)
-                if text_buf:
-                    parts.insert(0, {"text": text_buf})
-                calls = [
-                    ToolCall(
-                        id=p["functionCall"].get("name", ""),
-                        name=p["functionCall"].get("name", ""),
-                        arguments=p["functionCall"].get("args") or {},
-                    )
-                    for p in parts
-                    if "functionCall" in p
-                ]
-                raw = {"role": "model", "parts": parts} if parts else None
-                yield Turn(text=text_buf.strip(), tool_calls=calls, raw_message=raw)
-                return
-
-        # openai / qwen
-        async with client.stream(
-            "POST",
-            f"{url_root}/chat/completions",
-            json={
-                "model": model,
-                "messages": ([{"role": "system", "content": system}] if system else []) + messages,
-                **_token_limit(provider, max_tokens),
-                "tools": _tools_for(provider, tools),
-                "stream": True,
-            },
-            headers={"Authorization": f"Bearer {api_key}"},
-        ) as response:
-            if response.status_code >= 400:
-                await response.aread()
-                raise _safe_error(provider, response)
-            text_buf = ""
-            pending_calls: dict[int, dict[str, Any]] = {}
-            async for data in _sse_data(response):
-                if data.strip() == "[DONE]":
-                    break
-                try:
-                    chunk = json.loads(data)
-                except json.JSONDecodeError:
+    merged: AIMessageChunk | None = None
+    async with _http_client() as http:
+        llm = await _model_for(
+            provider,
+            api_key=api_key,
+            model=model,
+            base_url=base_url,
+            max_tokens=max_tokens,
+            reasoning_effort=reasoning_effort,
+            http_client=http,
+        )
+        runnable = llm.bind_tools(_tools(tools)) if tools else llm
+        try:
+            async for chunk in runnable.astream(_history(system, messages)):
+                if not isinstance(chunk, AIMessageChunk):
                     continue
-                choices = chunk.get("choices") or []
-                if not choices:
-                    continue
-                delta = choices[0].get("delta") or {}
-                piece = delta.get("content") or ""
+                merged = chunk if merged is None else merged + chunk
+                # LangChain's standard blocks: the same "reasoning" shape
+                # whichever provider produced it.
+                for block in chunk.content_blocks:
+                    if block.get("type") == "reasoning" and block.get("reasoning"):
+                        yield Reasoning(block["reasoning"])
+                piece = chunk.text
                 if piece:
-                    text_buf += piece
                     yield piece
-                for call in delta.get("tool_calls") or []:
-                    index = int(call.get("index", 0))
-                    slot = pending_calls.setdefault(
-                        index, {"id": "", "type": "function", "function": {"name": "", "arguments": ""}}
-                    )
-                    if call.get("id"):
-                        slot["id"] = call["id"]
-                    function = call.get("function") or {}
-                    if function.get("name"):
-                        slot["function"]["name"] += function["name"]
-                    if function.get("arguments"):
-                        slot["function"]["arguments"] += function["arguments"]
-            calls = []
-            for index in sorted(pending_calls):
-                slot = pending_calls[index]
-                try:
-                    arguments = json.loads(slot["function"]["arguments"] or "{}")
-                except json.JSONDecodeError:
-                    arguments = {}
-                calls.append(ToolCall(id=slot["id"], name=slot["function"]["name"], arguments=arguments))
-            raw: dict[str, Any] = {"role": "assistant", "content": text_buf or None}
-            if pending_calls:
-                raw["tool_calls"] = [pending_calls[i] for i in sorted(pending_calls)]
-            yield Turn(text=text_buf.strip(), tool_calls=calls, raw_message=raw)
+        except Exception as exc:
+            raise _provider_error(provider, exc) from exc
+    if merged is None:
+        raise ProviderError("The provider closed the stream early.")
+    message = message_chunk_to_message(merged)
+    calls = [
+        ToolCall(id=call.get("id") or call["name"], name=call["name"], arguments=call.get("args") or {})
+        for call in getattr(message, "tool_calls", []) or []
+    ]
+    usage = getattr(message, "usage_metadata", None) or {}
+    yield Turn(
+        text=message.text.strip(),
+        tool_calls=calls,
+        raw_message=message,
+        reasoning_tokens=int((usage.get("output_token_details") or {}).get("reasoning") or 0),
+    )
 
 
-def user_message(provider: str, text: str) -> Any:
-    """The provider's shape for a user turn."""
-    if provider == "gemini":
-        return {"role": "user", "parts": [{"text": text}]}
-    return {"role": "user", "content": text}
+def user_message(provider: str, text: str) -> BaseMessage:
+    """A user turn. `provider` is kept for callers; LangChain needs no per-provider shape."""
+    return HumanMessage(text)
 
 
-def assistant_message(provider: str, text: str) -> Any:
-    if provider == "gemini":
-        return {"role": "model", "parts": [{"text": text}]}
-    return {"role": "assistant", "content": text}
+def assistant_message(provider: str, text: str) -> BaseMessage:
+    return AIMessage(text)
 
 
-def tool_result_message(provider: str, call: ToolCall, result: dict[str, Any]) -> Any:
-    """The provider's shape for handing a tool's output back to the model."""
-    payload = json.dumps(result)
-    if provider == "anthropic":
-        return {
-            "role": "user",
-            "content": [{"type": "tool_result", "tool_use_id": call.id, "content": payload}],
-        }
-    if provider == "gemini":
-        return {
-            "role": "user",
-            "parts": [{"functionResponse": {"name": call.name, "response": result}}],
-        }
-    return {"role": "tool", "tool_call_id": call.id, "content": payload}
+def tool_result_message(provider: str, call: ToolCall, result: dict[str, Any]) -> BaseMessage:
+    """A tool's output handed back to the model, tied to the call that asked for it."""
+    return ToolMessage(content=json.dumps(result), tool_call_id=call.id, name=call.name)

@@ -223,6 +223,24 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-10 (fork `custom` only): providers on LangChain; thinking controls
+  and thought steps.** Diverges from upstream's no-SDK rule on purpose — kept
+  off the upstream PR chain.
+  - `ai_providers` runs ChatOpenAI / ChatAnthropic / ChatGoogleGenerativeAI
+    (Qwen via ChatOpenAI). Kept by hand: `_checked_base_url` before every
+    request, `_provider_error` (status/param only, never the body), timeouts,
+    no retries. History is LangChain messages; `ai_service` surface unchanged.
+  - Chat ⚙ menu: thinking on/off + effort (low/medium/high/xhigh), persisted
+    per browser. On = OpenAI Responses API with `reasoning.summary=auto`,
+    `store=False` + encrypted reasoning between tool rounds. Off sends nothing.
+  - Thought steps: "Thinking…" while it reasons, then "Thought for Ns" that
+    opens to the summary; recorded only when reasoning tokens > 0, "(no
+    summary)" when the provider gave none (short reasoning).
+  - Gotchas: google-genai pins websockets<17 (now 16.1.1; collab tests pass);
+    the Anthropic SDK talks through `httpx2`, so tests patch both
+    `httpx.AsyncClient.send` and `httpx2.AsyncClient.send` or they hit the
+    real API. Gates: unit 331, integration 306, `make verify`, ai-chat e2e 10.
+
 - **2026-09-18 (v3.11.0): the `nodum` CLI lands as its own package** (PR #87,
   by @ziuus, over five review rounds). `cli/` joins `back/` and `web/` as a
   top-level component: stdlib-only, its own `pyproject.toml`, `uv.lock`,

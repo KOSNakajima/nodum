@@ -33,6 +33,8 @@ import {
 import { aiApi, noteApi } from "@/lib/api/endpoints";
 import type { AIAction, AIConversationMessage, Note } from "@/lib/api/types";
 import { useEditorSelectionStore, type EditorSelection } from "@/lib/stores/editor-selection-store";
+import { useAiChatSettingsStore, type ReasoningEffort } from "@/lib/stores/ai-chat-settings-store";
+import { AiChatSettings } from "./ai-chat-settings";
 import { AIToolSteps, ContextChip } from "./ai-tool-steps";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { toastError } from "@/lib/stores/toast-store";
@@ -53,6 +55,8 @@ interface Attachment {
 interface Outgoing {
   text: string;
   attach: Attachment | null;
+  /** Thinking on for this message, at this effort; undefined = off. */
+  reasoning?: ReasoningEffort;
 }
 
 /** The `context` record the server stores on the user's message — built here
@@ -146,7 +150,13 @@ export function AiChatPane({
     noteId && openNote && contextKey !== dismissedKey
       ? { noteId, title: openNote.title, lines: selectedLines }
       : null;
-  const outgoing = (text: string): Outgoing => ({ text, attach: attachment });
+  const thinking = useAiChatSettingsStore((s) => s.thinking);
+  const effort = useAiChatSettingsStore((s) => s.effort);
+  const outgoing = (text: string): Outgoing => ({
+    text,
+    attach: attachment,
+    reasoning: status?.reasoning_supported && thinking ? effort : undefined,
+  });
 
   const configured = Boolean(status?.configured);
   const { data: conversations } = useQuery({
@@ -175,15 +185,14 @@ export function AiChatPane({
 
   // What the assistant is doing and saying right now, while the turn streams:
   // the reply grows word by word, finished tool calls pile up as steps, and the
-  // one running shows as a spinner line.
-  const [live, setLive] = useState<{ text: string; status: string | null; actions: AIAction[] }>({
-    text: "",
-    status: null,
-    actions: [],
-  });
+  // one running shows as a spinner line. `thinking` = this turn was sent with
+  // thinking on, so waiting reads "Thinking…" rather than a bare spinner.
+  type Live = { text: string; status: string | null; actions: AIAction[]; thinking: boolean };
+  const idle: Live = { text: "", status: null, actions: [], thinking: false };
+  const [live, setLive] = useState<Live>(idle);
 
   const send = useMutation({
-    mutationFn: async ({ text, attach }: Outgoing) => {
+    mutationFn: async ({ text, attach, reasoning }: Outgoing) => {
       // The open note goes along as context, so "summarise this" works —
       // unless its chip was dismissed.
       const open = attach ? queryClient.getQueryData<Note>(["note", vaultId, attach.noteId]) : undefined;
@@ -195,6 +204,7 @@ export function AiChatPane({
           conversation_id: conversationId ?? undefined,
           context,
           note_id: attach?.noteId,
+          reasoning_effort: reasoning,
           selection: attach?.lines
             ? {
                 from_line: attach.lines.fromLine,
@@ -217,13 +227,13 @@ export function AiChatPane({
         },
       );
     },
-    onMutate: ({ text, attach }: Outgoing) => {
+    onMutate: ({ text, attach, reasoning }: Outgoing) => {
       setPending((m) => [...m, { role: "user", content: text, actions: attach ? [contextRecord(attach)] : [] }]);
-      setLive({ text: "", status: null, actions: [] });
+      setLive({ ...idle, thinking: reasoning !== undefined });
       setDraft("");
       scrollToEnd();
     },
-    onSettled: () => setLive({ text: "", status: null, actions: [] }),
+    onSettled: () => setLive(idle),
     onSuccess: (data) => {
       setPending((m) => [
         ...m,
@@ -428,8 +438,14 @@ export function AiChatPane({
         ))}
         {send.isPending && (
           <div className="space-y-1.5" data-testid="ai-live">
-            <AIToolSteps actions={live.actions} running={live.status} onOpenNote={onOpenNote} />
-            {live.text ? (
+            {/* A running tool names itself; otherwise, until the reply starts,
+                a spinner — labelled "Thinking…" only when thinking is on. */}
+            <AIToolSteps
+              actions={live.actions}
+              running={live.status ?? (live.text ? null : live.thinking ? "Thinking…" : "")}
+              onOpenNote={onOpenNote}
+            />
+            {live.text && (
               <>
                 <p className="px-1 text-[11px] font-medium tracking-wide text-ob-faint uppercase">Assistant</p>
                 <div
@@ -439,12 +455,6 @@ export function AiChatPane({
                   <ReadingView content={live.text} vaultId={vaultId} onNavigate={() => undefined} />
                 </div>
               </>
-            ) : (
-              !live.status && (
-                <p className="px-1 text-[13px] text-ob-faint" aria-live="polite">
-                  Thinking…
-                </p>
-              )
             )}
           </div>
         )}
@@ -482,7 +492,12 @@ export function AiChatPane({
         />
         {/* What the next message takes along, Claude Code style: the open note
             — or the lines selected in it — as a chip with an ×. */}
-        <div className="flex items-center gap-1.5 px-1.5 pb-1.5" data-testid="ai-context">
+        <div className="flex min-w-0 items-center gap-1.5 px-1.5 pb-1.5" data-testid="ai-context">
+          <AiChatSettings
+            model={status?.active_model ?? ""}
+            reasoningSupported={Boolean(status?.reasoning_supported)}
+            onOpenModelSettings={() => openSettings("AI")}
+          />
           {attachment && contextKey && (
             <ContextChip
               title={attachment.title}

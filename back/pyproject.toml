@@ -60,6 +60,10 @@ dependencies = [
     "pycrdt-websocket>=0.16.4",
     "pypdf>=6.16.2",
     "mcp>=2.1.1",
+    "langchain-core>=1.6.9",
+    "langchain-openai>=1.7.0",
+    "langchain-anthropic>=1.7.5",
+    "langchain-google-genai>=4.4.0",
 ]
 
 [dependency-groups]

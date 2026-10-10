@@ -13,6 +13,7 @@
  */
 
 import { FileText, Loader2, TextSelect, X } from "lucide-react";
+import { Fragment, useState } from "react";
 
 import type { AIAction } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
@@ -33,6 +34,8 @@ interface Line {
   failed?: boolean;
   open?: () => void;
   href?: string;
+  /** Hidden text the line expands to (a thought's summary). */
+  detail?: string;
 }
 
 function plural(n: number, word: string) {
@@ -96,6 +99,8 @@ function describe(action: Step, onOpenNote: (id: string, title: string) => void)
         href: /^https?:\/\//i.test(action.url) ? action.url : undefined,
       };
     }
+    case "thought":
+      return { verb: `Thought for ${action.seconds}s`, target: "", detail: action.text || undefined };
     case "failed":
       return {
         verb: FAILED_VERB[action.tool] ?? action.tool,
@@ -107,6 +112,56 @@ function describe(action: Step, onOpenNote: (id: string, title: string) => void)
 }
 
 const HEAD = "flex min-w-0 items-baseline gap-1.5 text-left";
+
+/** A reasoning summary: paragraphs, with the **headings** providers put in. */
+function Summary({ text }: { text: string }) {
+  return (
+    <div className="mt-1 space-y-1.5 border-l border-ob-border pl-2 text-ob-faint">
+      {text.split(/\n{2,}/).map((paragraph, i) => (
+        <p key={i} className="whitespace-pre-wrap">
+          {paragraph.split(/\*\*(.+?)\*\*/g).map((part, j) =>
+            j % 2 === 1 ? (
+              <strong key={j} className="font-semibold text-ob-muted">
+                {part}
+              </strong>
+            ) : (
+              <Fragment key={j}>{part}</Fragment>
+            ),
+          )}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** A thought: a quiet line that opens to the summary, like a terminal agent's. */
+function ThoughtStep({ line }: { line: Line }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="flex items-start gap-2">
+      <span aria-hidden className="mt-[0.45em] size-1.5 shrink-0 rounded-full bg-ob-faint" />
+      <div className="min-w-0 flex-1">
+        {line.detail ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+            className="text-left text-ob-faint hover:text-ob-text"
+          >
+            {line.verb}
+          </button>
+        ) : (
+          // It reasoned, but the provider shared no summary — it leaves one
+          // out for short reasoning.
+          <span className="text-ob-faint" title="The model did not share a summary of this reasoning">
+            {line.verb} <span className="opacity-70">(no summary)</span>
+          </span>
+        )}
+        {open && line.detail && <Summary text={line.detail} />}
+      </div>
+    </li>
+  );
+}
 
 function Step({ line }: { line: Line }) {
   const head = (
@@ -159,21 +214,26 @@ export function AIToolSteps({
   onOpenNote,
 }: {
   actions: AIAction[];
-  /** The step in progress, while a turn streams. */
+  /** The step in progress, while a turn streams: its label, "" for a bare
+   *  spinner (waiting, nothing to name yet), null/undefined for none. */
   running?: string | null;
   onOpenNote: (id: string, title: string) => void;
 }) {
   // A user message's `context` record is not a step; ContextChip draws it.
   const steps = actions.filter((a): a is Step => a.kind !== "context");
-  if (steps.length === 0 && !running) return null;
+  if (steps.length === 0 && (running === undefined || running === null)) return null;
   return (
     <ol className="space-y-1 px-1 text-[12px]" aria-label="Assistant steps">
-      {steps.map((action, i) => (
-        <Step key={i} line={describe(action, onOpenNote)} />
-      ))}
-      {running && (
-        <li className="flex items-center gap-2 text-ob-muted" aria-live="polite">
-          <Loader2 className="size-3 shrink-0 animate-spin text-ob-accent" />
+      {steps.map((action, i) =>
+        action.kind === "thought" ? (
+          <ThoughtStep key={i} line={describe(action, onOpenNote)} />
+        ) : (
+          <Step key={i} line={describe(action, onOpenNote)} />
+        ),
+      )}
+      {running !== undefined && running !== null && (
+        <li className="flex items-center gap-2 text-ob-muted" aria-live="polite" data-testid="ai-running">
+          <Loader2 className="size-3 shrink-0 animate-spin text-ob-accent" aria-label={running ? undefined : "Working"} />
           {running}
         </li>
       )}

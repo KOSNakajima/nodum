@@ -7,7 +7,7 @@ the settings screen, and all it is allowed to know.
 
 import json
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -63,6 +63,8 @@ class VaultChatRequest(BaseModel):
     # along, and the lines selected in it.
     note_id: UUID | None = None
     selection: ChatSelection | None = None
+    # Thinking on, at this effort; omitted = off (the model's own default).
+    reasoning_effort: Literal["low", "medium", "high", "xhigh"] | None = None
 
 
 def _selection(body: VaultChatRequest) -> dict[str, Any] | None:
@@ -169,6 +171,7 @@ async def chat_in_vault(
             context=body.context,
             note_id=body.note_id,
             selection=_selection(body),
+            reasoning_effort=body.reasoning_effort,
         )
     ).unwrap()
     return {"data": data}
@@ -200,6 +203,7 @@ async def chat_in_vault_stream(
             context=body.context,
             note_id=body.note_id,
             selection=_selection(body),
+            reasoning_effort=body.reasoning_effort,
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
 

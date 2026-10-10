@@ -12,6 +12,7 @@ gets serialized to the browser.
 
 import json
 import logging
+import time
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
@@ -88,6 +89,8 @@ def _scope_status(credentials: list[AICredential], wanted: str | None) -> dict[s
         "configured": bool(credentials),
         "active_provider": active.provider if active else None,
         "active_model": active.model if active else "",
+        # Whether the chat's thinking controls apply to this provider.
+        "reasoning_supported": bool(active) and active.provider in ai_providers.REASONING_PROVIDERS,
         "credentials": [
             {
                 "provider": c.provider,
@@ -131,6 +134,7 @@ async def get_status(db: AsyncSession, user_id: UUID, vault_id: UUID | None = No
             "configured": bool(effective["configured"]),
             "active_provider": effective["active_provider"],
             "active_model": effective["active_model"],
+            "reasoning_supported": effective["reasoning_supported"],
             "credentials": account["credentials"],
             "account": account,
             "vault": vault_scope,
@@ -485,6 +489,13 @@ def _tool_status(call: ai_providers.ToolCall) -> str:
     return TOOL_STATUS.get(call.name, "Working…")
 
 
+def _thought_step(started: float, ended: float, summary: str) -> dict[str, Any]:
+    """The transcript step for one round of thinking: how long, and what the
+    model said about it — its summary, which providers share instead of raw
+    reasoning and leave out for short reasoning ("" then)."""
+    return {"kind": "thought", "seconds": max(1, round(ended - started)), "text": summary.strip()}
+
+
 async def _attached_context(
     db: AsyncSession, vault_id: UUID, note_id: UUID | None, selection: dict[str, Any] | None
 ) -> dict[str, Any] | None:
@@ -524,6 +535,7 @@ async def chat_with_vault_events(
     context: str = "",
     note_id: UUID | None = None,
     selection: dict[str, Any] | None = None,
+    reasoning_effort: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """`chat_with_vault` as a stream of events, for the live panel:
 
@@ -582,6 +594,8 @@ async def chat_with_vault_events(
         return
     credential, key = resolved.data
     provider = credential.provider
+    if provider not in ai_providers.REASONING_PROVIDERS:
+        reasoning_effort = None
 
     system = (
         "You are the assistant inside Nodum, a markdown knowledge base. "
@@ -620,6 +634,15 @@ async def chat_with_vault_events(
         for _ in range(ai_tools.MAX_TOOL_ROUNDS):
             turn: ai_providers.Turn | None = None
             streamed = ""
+            # With thinking on, each round may open with the model reasoning. It
+            # is over when the reply starts (or the round ends); that becomes a
+            # "Thought for Ns" step holding the summary. Models skip reasoning
+            # on easy questions and often summarise only longer reasoning, so
+            # the step is recorded only when it reasoned — with the summary
+            # when there is one.
+            started = time.monotonic()
+            thought = "" if reasoning_effort else None
+            thought_ended: float | None = None
             async for item in ai_providers.stream_turn(
                 provider=provider,
                 api_key=key,
@@ -628,14 +651,34 @@ async def chat_with_vault_events(
                 system=system,
                 tools=ai_tools.TOOLS,
                 base_url=credential.base_url,
+                reasoning_effort=reasoning_effort,
+                **({"max_tokens": ai_providers.REASONING_MAX_TOKENS} if reasoning_effort else {}),
             ):
                 if isinstance(item, ai_providers.Turn):
                     turn = item
                     break
+                if isinstance(item, ai_providers.Reasoning):
+                    if thought is not None:
+                        thought += item.text
+                        yield {"type": "thinking", "text": item.text}
+                    continue
+                if thought is not None and thought_ended is None:
+                    thought_ended = time.monotonic()
+                    # A summary means it reasoned: show the step as the reply
+                    # starts. Without one, wait for the token count at the end.
+                    if thought.strip():
+                        step = _thought_step(started, thought_ended, thought)
+                        actions.append(step)
+                        yield {"type": "action", "action": step}
+                        thought = None
                 streamed += item
                 yield {"type": "delta", "text": item}
             if turn is None:
                 raise ProviderError("The provider closed the stream early.")
+            if thought is not None and (thought.strip() or turn.reasoning_tokens > 0):
+                step = _thought_step(started, thought_ended or time.monotonic(), thought)
+                actions.append(step)
+                yield {"type": "action", "action": step}
             if not turn.tool_calls:
                 reply = turn.text
                 break
@@ -720,6 +763,7 @@ async def chat_with_vault(
     context: str = "",
     note_id: UUID | None = None,
     selection: dict[str, Any] | None = None,
+    reasoning_effort: str | None = None,
 ) -> ServiceResponse[dict[str, Any]]:
     """A chat turn that can search, read and write the vault — the whole
     answer at once. Same loop as the stream; see `chat_with_vault_events`."""
@@ -733,6 +777,7 @@ async def chat_with_vault(
         context=context,
         note_id=note_id,
         selection=selection,
+        reasoning_effort=reasoning_effort,
     ):
         if event["type"] == "error":
             return ServiceResponse.fail(event.get("code") or "validation_failed", event["message"])

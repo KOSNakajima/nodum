@@ -1,5 +1,7 @@
+import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { AddressInfo } from "node:net";
+import { join } from "node:path";
 
 import { expect, test, type Page } from "@playwright/test";
 
@@ -67,6 +69,12 @@ function toStreamChunks(reply: ReturnType<typeof chatMessage> | ReturnType<typeo
  *  reply that the streaming test can observe, short enough not to slow the rest. */
 const STREAM_CHUNK_GAP_MS = 120;
 
+/** A real Azure gpt-5.4 Responses API stream with reasoning on (encrypted
+ *  reasoning and ids scrubbed): what the app gets when thinking is on. */
+const RESPONSES_STREAM = JSON.parse(
+  readFileSync(join(__dirname, "fixtures", "openai-responses-reasoning.json"), "utf8"),
+) as unknown[];
+
 test.beforeAll(async () => {
   stub = createServer((req, res) => {
     let body = "";
@@ -74,6 +82,19 @@ test.beforeAll(async () => {
     req.on("end", () => {
       const parsed = body ? JSON.parse(body) : null;
       stubRequests.push({ url: req.url, headers: req.headers, body: parsed });
+      if (req.url?.endsWith("/responses")) {
+        // Thinking on: the Responses API, replayed event by event.
+        res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+        const events = [...RESPONSES_STREAM];
+        const tick = () => {
+          const event = events.shift();
+          if (event === undefined) return res.end();
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+          setTimeout(tick, 40);
+        };
+        tick();
+        return;
+      }
       const reply = (stubReplies.shift() ?? chatMessage("(stub ran out of replies)")) as ReturnType<
         typeof chatMessage
       >;
@@ -344,6 +365,57 @@ test.describe("AI chat panel", () => {
       timeout: 20_000,
     });
     await expect(page.getByLabel("Message the assistant")).toHaveValue("anything");
+  });
+
+  test("thinking on streams a thought that opens to its summary", async ({ page }) => {
+    await signupFreshUser(page, "ai-think");
+    await configureStubProvider(page, stubUrl);
+    await page.reload();
+    await openAiPanel(page);
+
+    const send = async (text: string, reply: string) => {
+      await page.getByLabel("Message the assistant").fill(text);
+      await page.getByRole("button", { name: "Send" }).click();
+      await expect(page.getByText(reply)).toBeVisible({ timeout: 15_000 });
+    };
+    const request = (i: number) =>
+      stubRequests[i] as { url: string; body: { reasoning_effort?: string; reasoning?: { effort: string } } };
+
+    // Off by default: chat completions, nothing about reasoning sent, no thought.
+    stubReplies = [chatMessage("Plain."), chatMessage("Plain again.")];
+    await send("one", "Plain.");
+    expect(request(0).url).toMatch(/\/chat\/completions$/);
+    expect(request(0).body.reasoning_effort).toBeUndefined();
+    await expect(page.getByRole("button", { name: /^Thought for/ })).toHaveCount(0);
+
+    // Thinking on at High: the button names the effort, the request goes to
+    // the Responses API with that effort, and waiting reads "Thinking…".
+    await page.getByRole("button", { name: "Chat settings" }).click();
+    await page.getByRole("switch", { name: "Thinking" }).click();
+    await page.getByRole("button", { name: "Effort High" }).click();
+    await expect(page.getByRole("switch", { name: "Thinking" })).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Chat settings" })).toContainText("High");
+    await page.getByLabel("Message the assistant").fill("Is 91 prime?");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByTestId("ai-running")).toContainText("Thinking…");
+    await expect(page.getByText("No, it isn't.")).toBeVisible({ timeout: 15_000 });
+    expect(request(1).url).toMatch(/\/responses$/);
+    expect(request(1).body.reasoning?.effort).toBe("high");
+
+    // Done thinking: a "Thought for Ns" line that opens to the summary.
+    const thought = page.getByRole("button", { name: /^Thought for \d+s$/ });
+    await expect(thought).toBeVisible();
+    await expect(page.getByText("Verifying if 91 is prime")).toHaveCount(0);
+    await thought.click();
+    await expect(page.getByText("Verifying if 91 is prime")).toBeVisible();
+
+    // Off again: back to chat completions.
+    await page.getByRole("button", { name: "Chat settings" }).click();
+    await page.getByRole("switch", { name: "Thinking" }).click();
+    await page.keyboard.press("Escape");
+    await send("three", "Plain again.");
+    expect(request(2).url).toMatch(/\/chat\/completions$/);
   });
 
   test("the input starts one line high and grows with what is typed", async ({ page }) => {
