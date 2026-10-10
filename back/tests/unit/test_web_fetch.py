@@ -143,16 +143,57 @@ async def test_fetch_url_tool_reports_failure_and_records_visits(monkeypatch: py
         raise web_fetch.FetchError("The page answered HTTP 404.")
 
     monkeypatch.setattr(web_fetch, "fetch_page", refuse)
-    result = await ai_tools.run_tool(None, None, None, "fetch_url", {"url": "https://example.com/x"})  # type: ignore[arg-type]
+    args = {"url": "https://example.com/x"}
+    result = await ai_tools.run_tool(None, None, None, "fetch_url", args)  # type: ignore[arg-type]
     assert result == {"ok": False, "error": "The page answered HTTP 404."}
-    assert ai_tools.describe("fetch_url", {}, result) is None
+    assert ai_tools.describe("fetch_url", args, result) == {
+        "kind": "failed",
+        "tool": "fetch_url",
+        "detail": "https://example.com/x",
+        "error": "The page answered HTTP 404.",
+    }
 
-    visited = {"ok": True, "url": "https://example.com/x", "title": "", "content": "…", "truncated": False}
-    assert ai_tools.describe("fetch_url", {}, visited) == {
+    visited = {"ok": True, "url": "https://example.com/x", "title": "", "content": "abc", "truncated": False}
+    assert ai_tools.describe("fetch_url", args, visited) == {
         "kind": "visited",
         "title": "https://example.com/x",
         "url": "https://example.com/x",
+        "chars": 3,
+        "truncated": False,
     }
+
+
+@pytest.mark.parametrize(
+    ("name", "args", "result", "expected"),
+    [
+        (
+            "search_notes",
+            {"query": "spaced repetition"},
+            {"ok": True, "results": [{}, {}]},
+            {"kind": "searched", "query": "spaced repetition", "count": 2},
+        ),
+        (
+            "read_note",
+            {"title": "Welcome"},
+            {"ok": True, "id": "n1", "title": "Welcome", "content": "…"},
+            {"kind": "read", "title": "Welcome", "note_id": "n1"},
+        ),
+        (
+            "create_note",
+            {"title": "New"},
+            {"ok": True, "id": "n2", "title": "New"},
+            {"kind": "created", "title": "New", "note_id": "n2"},
+        ),
+        (
+            "read_note",
+            {"title": "Missing"},
+            {"ok": False, "error": "No note by that name."},
+            {"kind": "failed", "tool": "read_note", "detail": "Missing", "error": "No note by that name."},
+        ),
+    ],
+)
+def test_every_tool_call_is_recorded_for_the_transcript(name: str, args: dict, result: dict, expected: dict) -> None:
+    assert ai_tools.describe(name, args, result) == expected
 
 
 async def test_relative_links_become_absolute(dns: None, monkeypatch: pytest.MonkeyPatch) -> None:

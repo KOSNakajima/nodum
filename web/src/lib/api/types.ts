@@ -251,11 +251,13 @@ export interface AIStatus {
   providers: AIProviderInfo[];
 }
 
-/** Something the assistant did during a turn: a vault change, or a web page
- * it opened with fetch_url. */
+/** One tool call the assistant made during a turn, as stored with the reply.
+ * Messages from before every call was recorded hold only created/updated. */
 export type AIAction =
-  | { kind: "created" | "updated"; title: string; note_id: string }
-  | { kind: "visited"; title: string; url: string };
+  | { kind: "created" | "updated" | "read"; title: string; note_id: string }
+  | { kind: "searched"; query: string; count: number }
+  | { kind: "visited"; title: string; url: string; chars?: number; truncated?: boolean }
+  | { kind: "failed"; tool: string; detail: string; error: string };
 
 export interface AIChatReply {
   reply: string;

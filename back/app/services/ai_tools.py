@@ -174,6 +174,7 @@ async def run_tool(
                 return {"ok": False, "error": "No note by that name."}
             return {
                 "ok": True,
+                "id": str(note.id),
                 "title": note.title,
                 "path": note.path,
                 "content": note.content[:_NOTE_CHARS],
@@ -238,16 +239,39 @@ async def run_tool(
         return {"ok": False, "error": "That operation failed."}
 
 
-def describe(name: str, args: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
-    """A record for the transcript: every vault CHANGE, and every web page
-    opened — the answer may rest on it, and the user should see where the
-    assistant went. Vault reads are not surfaced."""
+_DETAIL_CHARS = 200
+
+
+def _detail(name: str, args: dict[str, Any]) -> str:
+    """The argument worth showing for a call — what it searched for, read or opened."""
+    key = {"search_notes": "query", "fetch_url": "url"}.get(name, "title")
+    return str(args.get(key, ""))[:_DETAIL_CHARS]
+
+
+def describe(name: str, args: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """One transcript line per tool call, stored with the reply.
+
+    Every call is recorded — reads and failures too — so the panel can show
+    the steps behind an answer the way a terminal agent does, and a restored
+    thread shows the same. Vault changes keep their original `created` /
+    `updated` shape, which older stored messages already use.
+    """
     if not result.get("ok"):
-        return None
-    if name == "fetch_url":
-        return {"kind": "visited", "title": result.get("title") or result.get("url", ""), "url": result.get("url", "")}
+        return {"kind": "failed", "tool": name, "detail": _detail(name, args), "error": str(result.get("error", ""))}
+    if name == "search_notes":
+        return {"kind": "searched", "query": _detail(name, args), "count": len(result.get("results", []))}
+    if name == "read_note":
+        return {"kind": "read", "title": result.get("title", ""), "note_id": result.get("id", "")}
     if name == "create_note":
         return {"kind": "created", "title": result.get("title", ""), "note_id": result.get("id", "")}
     if name == "append_to_note":
         return {"kind": "updated", "title": result.get("title", ""), "note_id": result.get("id", "")}
-    return None
+    if name == "fetch_url":
+        return {
+            "kind": "visited",
+            "title": result.get("title") or result.get("url", ""),
+            "url": result.get("url", ""),
+            "chars": len(result.get("content", "")),
+            "truncated": bool(result.get("truncated")),
+        }
+    return {"kind": "failed", "tool": name, "detail": _detail(name, args), "error": "Unknown tool."}
