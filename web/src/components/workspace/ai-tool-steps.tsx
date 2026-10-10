@@ -258,12 +258,14 @@ export function ContextChip({
   toLine,
   onRemove,
   onOpen,
+  className,
 }: {
   title: string;
   fromLine?: number;
   toLine?: number;
   onRemove?: () => void;
   onOpen?: () => void;
+  className?: string;
 }) {
   const selected = fromLine !== undefined && toLine !== undefined;
   const Icon = selected ? TextSelect : FileText;
@@ -282,13 +284,13 @@ export function ContextChip({
   const chip = "inline-flex min-w-0 max-w-full items-center gap-1 rounded border border-ob-border px-1.5 py-0.5 text-[11px] text-ob-faint";
   if (onOpen) {
     return (
-      <button type="button" onClick={onOpen} aria-label={description} className={cn(chip, "hover:bg-ob-hover")}>
+      <button type="button" onClick={onOpen} aria-label={description} className={cn(chip, "hover:bg-ob-hover", className)}>
         {body}
       </button>
     );
   }
   return (
-    <span className={chip} title={description}>
+    <span className={cn(chip, className)} title={description}>
       {body}
       {onRemove && (
         <button

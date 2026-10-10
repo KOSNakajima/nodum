@@ -38,12 +38,18 @@ import { AiChatSettings } from "./ai-chat-settings";
 import { AIToolSteps, ContextChip } from "./ai-tool-steps";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { toastError } from "@/lib/stores/toast-store";
-import { cn } from "@/lib/utils";
 import { isComposing } from "@/lib/ime";
 
 const CONTEXT_CHARS = 4_000;
 /** The API's cap on selected text. */
 const SELECTION_CHARS = 20_000;
+/** An answer: plain text, its paragraph margins trimmed at the ends so the
+ *  space around it is the layout's, not the markdown's. The reading view's
+ *  margins are unlayered CSS, which beats any layered utility — hence `!`. */
+const ANSWER = "px-1 [&_.nodum-reading>:first-child]:mt-0! [&_.nodum-reading>:last-child]:mb-0!";
+/** The reading view sizes itself from the editor's font setting; in a side
+ *  panel it should match the panel. */
+const ANSWER_FONT = { "--editor-font-size": "13px" } as React.CSSProperties;
 
 /** What goes along with a message: the open note, and lines selected in it. */
 interface Attachment {
@@ -384,60 +390,62 @@ export function AiChatPane({
         </div>
       </div>
 
-      <div ref={listRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto py-2">
+      {/* Only the question sits in a box; the answer reads as plain text
+          under it. A turn's parts sit close and turns are spaced apart, so
+          each question-and-answer reads as one unit. */}
+      <div ref={listRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto py-2">
         {messages.length === 0 && (
           <p className="px-1 text-[13px] text-ob-faint">
             Ask about your notes, or ask for one to be written. It can search, read, create and
             extend notes in this vault, and open links you paste.
           </p>
         )}
-        {messages.map((message, i) => (
-          <div key={i} className="space-y-1.5">
-            {/* The steps behind the answer come first, between the question and
-                the reply — every tool call, never silent, and stored with the
-                message so a restored thread shows them. */}
-            <AIToolSteps actions={message.actions ?? []} onOpenNote={onOpenNote} />
-            <p className="px-1 text-[11px] font-medium tracking-wide text-ob-faint uppercase">
-              {message.role === "user" ? "You" : "Assistant"}
-            </p>
+        {messages.map((message, i) =>
+          message.role === "user" ? (
             <div
-              className={cn(
-                "rounded-md px-2 py-1.5 text-[13px]",
-                message.role === "user" ? "bg-ob-active text-ob-text" : "bg-ob-bg text-ob-muted",
-              )}
-              // The reading view sizes itself from the editor's font setting;
-              // in a side panel it should match the panel.
-              style={{ "--editor-font-size": "13px" } as React.CSSProperties}
+              key={i}
+              className="mt-5 flex flex-col gap-1.5 rounded-md bg-ob-active px-2.5 py-1.5 text-[13px] text-ob-text first:mt-0"
             >
-              {message.role === "assistant" ? (
+              <span className="sr-only">You:</span>
+              {/* A pasted URL has no break points; let it wrap anywhere
+                  rather than push the panel into horizontal scroll. */}
+              <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</p>
+              <div className="flex flex-wrap gap-1 empty:hidden">
+                {(message.actions ?? []).map((action, k) =>
+                  action.kind === "context" ? (
+                    <ContextChip
+                      key={k}
+                      title={action.title}
+                      fromLine={action.from_line}
+                      toLine={action.to_line}
+                      onOpen={() => onOpenNote(action.note_id, action.title)}
+                      // The box is lighter than the panel; a stronger edge
+                      // keeps the chip from melting into it.
+                      className="border-ob-faint/60 bg-black/15"
+                    />
+                  ) : null,
+                )}
+              </div>
+            </div>
+          ) : (
+            <div key={i} className="mt-2.5 space-y-2">
+              {/* The steps behind the answer come first, between the question and
+                  the reply — every tool call, never silent, and stored with the
+                  message so a restored thread shows them. */}
+              <AIToolSteps actions={message.actions ?? []} onOpenNote={onOpenNote} />
+              <div className={ANSWER} style={ANSWER_FONT}>
+                <span className="sr-only">Assistant:</span>
                 <ReadingView
                   content={message.content}
                   vaultId={vaultId}
                   onNavigate={() => undefined}
                 />
-              ) : (
-                // A pasted URL has no break points; let it wrap anywhere
-                // rather than push the panel into horizontal scroll.
-                <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</p>
-              )}
+              </div>
             </div>
-            {message.role === "user" &&
-              (message.actions ?? []).map((action, k) =>
-                action.kind === "context" ? (
-                  <div key={k} className="px-1">
-                    <ContextChip
-                      title={action.title}
-                      fromLine={action.from_line}
-                      toLine={action.to_line}
-                      onOpen={() => onOpenNote(action.note_id, action.title)}
-                    />
-                  </div>
-                ) : null,
-              )}
-          </div>
-        ))}
+          ),
+        )}
         {send.isPending && (
-          <div className="space-y-1.5" data-testid="ai-live">
+          <div className="mt-2.5 space-y-2" data-testid="ai-live">
             {/* A running tool names itself; otherwise, until the reply starts,
                 a spinner — labelled "Thinking…" only when thinking is on. */}
             <AIToolSteps
@@ -446,15 +454,9 @@ export function AiChatPane({
               onOpenNote={onOpenNote}
             />
             {live.text && (
-              <>
-                <p className="px-1 text-[11px] font-medium tracking-wide text-ob-faint uppercase">Assistant</p>
-                <div
-                  className="rounded-md bg-ob-bg px-2 py-1.5 text-[13px] text-ob-muted"
-                  style={{ "--editor-font-size": "13px" } as React.CSSProperties}
-                >
-                  <ReadingView content={live.text} vaultId={vaultId} onNavigate={() => undefined} />
-                </div>
-              </>
+              <div className={ANSWER} style={ANSWER_FONT}>
+                <ReadingView content={live.text} vaultId={vaultId} onNavigate={() => undefined} />
+              </div>
             )}
           </div>
         )}

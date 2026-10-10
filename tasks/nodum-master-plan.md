@@ -223,6 +223,15 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-10 (fork `custom`): AI chat transcript reads as turns.** Only the
+  question is boxed (its context chips inside it); the answer is plain text
+  with the reading view's end margins trimmed; tool/thought steps stay a
+  bullet list above the answer. A turn's parts sit close (10px), turns 20px
+  apart. YOU/ASSISTANT labels dropped on screen, kept as sr-only text.
+  - Gotcha: `.nodum-reading p` margins are unlayered CSS and beat Tailwind
+    utilities, so trimming them needs the `!` modifier.
+  - Gates: `make verify`, ai-chat e2e 10.
+
 - **2026-10-10 (fork `custom` only): providers on LangChain; thinking controls
   and thought steps.** Diverges from upstream's no-SDK rule on purpose — kept
   off the upstream PR chain.
