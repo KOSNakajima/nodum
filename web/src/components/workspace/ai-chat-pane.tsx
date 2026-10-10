@@ -30,15 +30,41 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { aiApi } from "@/lib/api/endpoints";
+import { aiApi, noteApi } from "@/lib/api/endpoints";
 import type { AIAction, AIConversationMessage, Note } from "@/lib/api/types";
-import { AIToolSteps } from "./ai-tool-steps";
+import { useEditorSelectionStore, type EditorSelection } from "@/lib/stores/editor-selection-store";
+import { AIToolSteps, ContextChip } from "./ai-tool-steps";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { toastError } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
 import { isComposing } from "@/lib/ime";
 
 const CONTEXT_CHARS = 4_000;
+/** The API's cap on selected text. */
+const SELECTION_CHARS = 20_000;
+
+/** What goes along with a message: the open note, and lines selected in it. */
+interface Attachment {
+  noteId: string;
+  title: string;
+  lines: EditorSelection | null;
+}
+
+interface Outgoing {
+  text: string;
+  attach: Attachment | null;
+}
+
+/** The `context` record the server stores on the user's message — built here
+ * too, so the optimistic copy shows it before the stored one arrives. */
+function contextRecord(attach: Attachment): AIAction {
+  return {
+    kind: "context",
+    title: attach.title,
+    note_id: attach.noteId,
+    ...(attach.lines ? { from_line: attach.lines.fromLine, to_line: attach.lines.toLine } : {}),
+  };
+}
 
 export function AiChatPane({
   vaultId,
@@ -66,6 +92,31 @@ export function AiChatPane({
   const [pending, setPending] = useState<AIConversationMessage[]>([]);
   const [draft, setDraft] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
+
+  // The open note and the lines selected in it — shown above the input so it
+  // is never a guess whether they go along, and sent with the message.
+  const { data: openNote } = useQuery({
+    queryKey: ["note", vaultId, noteId],
+    queryFn: () => noteApi.get(vaultId, noteId as string),
+    enabled: noteId !== null,
+    gcTime: 60_000,
+  });
+  const editorSelection = useEditorSelectionStore((s) => s.selection);
+  const selectedLines = editorSelection && editorSelection.noteId === noteId ? editorSelection : null;
+  // × on the chip leaves this note (or this selection) out. Keyed by what the
+  // chip shows, so selecting other lines or opening another note brings it back.
+  const contextKey =
+    noteId && openNote
+      ? selectedLines
+        ? `${noteId}:${selectedLines.fromLine}-${selectedLines.toLine}`
+        : noteId
+      : null;
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const attachment: Attachment | null =
+    noteId && openNote && contextKey !== dismissedKey
+      ? { noteId, title: openNote.title, lines: selectedLines }
+      : null;
+  const outgoing = (text: string): Outgoing => ({ text, attach: attachment });
 
   const configured = Boolean(status?.configured);
   const { data: conversations } = useQuery({
@@ -102,13 +153,26 @@ export function AiChatPane({
   });
 
   const send = useMutation({
-    mutationFn: async (text: string) => {
-      // Whatever note is open goes along as context, so "summarise this" works.
-      const open = noteId ? queryClient.getQueryData<Note>(["note", vaultId, noteId]) : undefined;
+    mutationFn: async ({ text, attach }: Outgoing) => {
+      // The open note goes along as context, so "summarise this" works —
+      // unless its chip was dismissed.
+      const open = attach ? queryClient.getQueryData<Note>(["note", vaultId, attach.noteId]) : undefined;
       const context = open ? `# ${open.title}\n\n${open.content.slice(0, CONTEXT_CHARS)}` : "";
       return aiApi.vaultChatStream(
         vaultId,
-        { message: text, conversation_id: conversationId ?? undefined, context },
+        {
+          message: text,
+          conversation_id: conversationId ?? undefined,
+          context,
+          note_id: attach?.noteId,
+          selection: attach?.lines
+            ? {
+                from_line: attach.lines.fromLine,
+                to_line: attach.lines.toLine,
+                text: attach.lines.text.slice(0, SELECTION_CHARS),
+              }
+            : undefined,
+        },
         (event) => {
           if (event.type === "delta") {
             setLive((l) => ({ ...l, status: null, text: l.text + event.text }));
@@ -123,8 +187,8 @@ export function AiChatPane({
         },
       );
     },
-    onMutate: (text: string) => {
-      setPending((m) => [...m, { role: "user", content: text, actions: [] }]);
+    onMutate: ({ text, attach }: Outgoing) => {
+      setPending((m) => [...m, { role: "user", content: text, actions: attach ? [contextRecord(attach)] : [] }]);
       setLive({ text: "", status: null, actions: [] });
       setDraft("");
       scrollToEnd();
@@ -143,14 +207,25 @@ export function AiChatPane({
         // Once the stored transcript includes this turn, the local copy would
         // double it.
         .then(() => setPending([]));
-      if ((data.actions ?? []).some((action) => action.kind === "created" || action.kind === "updated")) {
+      const writes = (data.actions ?? []).filter(
+        (a): a is AIAction & { kind: "created" | "updated" | "edited"; note_id: string } =>
+          a.kind === "created" || a.kind === "updated" || a.kind === "edited",
+      );
+      if (writes.length > 0) {
         void queryClient.invalidateQueries({ queryKey: ["tree", vaultId] });
         void queryClient.invalidateQueries({ queryKey: ["graph", vaultId] });
         void queryClient.invalidateQueries({ queryKey: ["backlinks", vaultId] });
       }
+      // A note the assistant changed may be open: refetching it is what lets
+      // the editor adopt the new body (it does, unless you have unsaved typing).
+      for (const write of writes) {
+        if (write.kind !== "created") {
+          void queryClient.invalidateQueries({ queryKey: ["note", vaultId, write.note_id] });
+        }
+      }
       scrollToEnd();
     },
-    onError: (e, text) => {
+    onError: (e, { text }) => {
       toastError(e, "The AI request failed.");
       // Nothing was stored, so drop the optimistic question and hand it back.
       setPending((m) => m.filter((msg) => msg.content !== text || msg.role !== "user"));
@@ -306,6 +381,19 @@ export function AiChatPane({
                 <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{message.content}</p>
               )}
             </div>
+            {message.role === "user" &&
+              (message.actions ?? []).map((action, k) =>
+                action.kind === "context" ? (
+                  <div key={k} className="px-1">
+                    <ContextChip
+                      title={action.title}
+                      fromLine={action.from_line}
+                      toLine={action.to_line}
+                      onOpen={() => onOpenNote(action.note_id, action.title)}
+                    />
+                  </div>
+                ) : null,
+              )}
           </div>
         ))}
         {send.isPending && (
@@ -333,11 +421,13 @@ export function AiChatPane({
       </div>
 
       <form
-        className="flex items-end gap-1.5 border-t border-ob-border pt-2"
+        // Focus is drawn on the box, matching the global :focus-visible ring
+        // (2px accent, -1px offset) the textarea itself no longer shows.
+        className="mt-2 rounded border border-ob-border bg-ob-bg focus-within:outline-2 focus-within:-outline-offset-1 focus-within:outline-ob-accent"
         onSubmit={(e) => {
           e.preventDefault();
           const text = draft.trim();
-          if (text && !send.isPending) send.mutate(text);
+          if (text && !send.isPending) send.mutate(outgoing(text));
         }}
       >
         <textarea
@@ -351,21 +441,35 @@ export function AiChatPane({
             if (e.key === "Enter" && !e.shiftKey && !isComposing(e)) {
               e.preventDefault();
               const text = draft.trim();
-              if (text && !send.isPending) send.mutate(text);
+              if (text && !send.isPending) send.mutate(outgoing(text));
             }
           }}
           placeholder="Ask about this vault…"
-          className="min-h-[3.5rem] flex-1 resize-none rounded border border-ob-border bg-ob-bg px-2 py-1.5 text-[13px] text-ob-text outline-none placeholder:text-ob-faint focus:border-ob-accent"
+          // The box around it shows focus (focus-within); the global
+          // :focus-visible ring is unlayered, so only !important removes it.
+          className="block min-h-[3.5rem] w-full resize-none bg-transparent px-2 py-1.5 text-[13px] text-ob-text outline-none! placeholder:text-ob-faint"
         />
-        <Button
-          type="submit"
-          size="sm"
-          aria-label="Send"
-          disabled={!draft.trim() || send.isPending}
-          className="mb-0.5"
-        >
-          <Send className="size-3.5" strokeWidth={2} />
-        </Button>
+        {/* What the next message takes along, Claude Code style: the open note
+            — or the lines selected in it — as a chip with an ×. */}
+        <div className="flex items-center gap-1.5 px-1.5 pb-1.5" data-testid="ai-context">
+          {attachment && contextKey && (
+            <ContextChip
+              title={attachment.title}
+              fromLine={attachment.lines?.fromLine}
+              toLine={attachment.lines?.toLine}
+              onRemove={() => setDismissedKey(contextKey)}
+            />
+          )}
+          <Button
+            type="submit"
+            size="sm"
+            aria-label="Send"
+            disabled={!draft.trim() || send.isPending}
+            className="ml-auto"
+          >
+            <Send className="size-3.5" strokeWidth={2} />
+          </Button>
+        </div>
       </form>
     </div>
   );

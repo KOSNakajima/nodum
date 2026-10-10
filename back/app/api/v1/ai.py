@@ -43,6 +43,14 @@ class ChatRequest(BaseModel):
     context: str = Field(default="", max_length=20_000)
 
 
+class ChatSelection(BaseModel):
+    """Lines the user selected in the open note (1-based, inclusive)."""
+
+    from_line: int = Field(ge=1)
+    to_line: int = Field(ge=1)
+    text: str = Field(max_length=20_000)
+
+
 class VaultChatRequest(BaseModel):
     """One new message. The rest of the transcript comes from the stored
     conversation — the client cannot rewrite what the model was told."""
@@ -51,6 +59,17 @@ class VaultChatRequest(BaseModel):
     conversation_id: UUID | None = None
     # Vault context the panel wants the model to have (note title/body excerpt).
     context: str = Field(default="", max_length=20_000)
+    # The open note, recorded on the message so the transcript shows what went
+    # along, and the lines selected in it.
+    note_id: UUID | None = None
+    selection: ChatSelection | None = None
+
+
+def _selection(body: VaultChatRequest) -> dict[str, Any] | None:
+    if body.selection is None:
+        return None
+    first, last = sorted((body.selection.from_line, body.selection.to_line))
+    return {"from_line": first, "to_line": last, "text": body.selection.text}
 
 
 class RenameConversationRequest(BaseModel):
@@ -148,6 +167,8 @@ async def chat_in_vault(
             message=body.message,
             conversation_id=body.conversation_id,
             context=body.context,
+            note_id=body.note_id,
+            selection=_selection(body),
         )
     ).unwrap()
     return {"data": data}
@@ -177,6 +198,8 @@ async def chat_in_vault_stream(
             message=body.message,
             conversation_id=body.conversation_id,
             context=body.context,
+            note_id=body.note_id,
+            selection=_selection(body),
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
 

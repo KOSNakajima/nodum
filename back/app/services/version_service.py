@@ -34,6 +34,17 @@ async def maybe_snapshot(db: AsyncSession, note: Note, new_content: str) -> None
     await _prune(db, note.id)
 
 
+async def snapshot_now(db: AsyncSession, note: Note) -> None:
+    """Snapshot the note's current content regardless of the interval.
+
+    For writes the user did not type — the assistant's edit_note — so the
+    versions panel can always restore exactly what was there before, even
+    when an autosave snapshot was taken a minute ago. Caller commits.
+    """
+    db.add(NoteVersion(note_id=note.id, title=note.title, content=note.content))
+    await _prune(db, note.id)
+
+
 async def _prune(db: AsyncSession, note_id: UUID) -> None:
     """Keep only the newest NOTE_VERSIONS_KEPT snapshots for a note."""
     keep = (

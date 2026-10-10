@@ -1,9 +1,11 @@
 """The vault operations the AI is allowed to perform, and their execution.
 
-Deliberately small and deliberately additive: search, read, create, append —
-plus opening a web page the user points it at. It can bring things INTO the
-vault and it can read what is there — it cannot rename, overwrite or delete
-anything, so a confused model cannot destroy work.
+Deliberately small: search, read, create, append, edit one passage — plus
+opening a web page the user points it at. It cannot rename, move or delete
+notes. The one destructive tool, edit_note, replaces a single exact passage
+(the way "fix these lines" works) and snapshots the note into its version
+history first, so every assistant edit can be restored from the versions
+panel.
 Every call is scoped to one vault and re-checks ownership through the same
 `get_owned_vault` chokepoint the rest of the app uses.
 
@@ -19,7 +21,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services import note_service, search_service, web_fetch
+from app.services import note_service, search_service, version_service, web_fetch
 from app.services.folder_service import ensure_folder_path
 
 logger = logging.getLogger(__name__)
@@ -84,6 +86,26 @@ TOOLS: list[dict[str, Any]] = [
                 "content": {"type": "string", "description": "Markdown to append"},
             },
             "required": ["title", "content"],
+        },
+    },
+    {
+        "name": "edit_note",
+        "description": (
+            "Replace one exact passage of an existing note with new text — the "
+            "way to fix or rewrite part of a note, such as the lines the user "
+            "selected. old_text must match the note exactly, line breaks "
+            "included, and occur exactly once: copy it from the selection or "
+            "from read_note, and add surrounding text if it is not unique. An "
+            "empty new_text deletes the passage."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Note title or path"},
+                "old_text": {"type": "string", "description": "The exact passage to replace"},
+                "new_text": {"type": "string", "description": "What to put in its place"},
+            },
+            "required": ["title", "old_text", "new_text"],
         },
     },
     {
@@ -220,6 +242,48 @@ async def run_tool(
                 return {"ok": False, "error": updated.message}
             return {"ok": True, "id": str(note.id), "title": note.title, "path": note.path}
 
+        if name == "edit_note":
+            note = await _resolve_note(db, vault_id, user_id, str(args.get("title", "")))
+            if note is None:
+                return {"ok": False, "error": "No note by that name."}
+            old = str(args.get("old_text", ""))
+            new = str(args.get("new_text", ""))
+            if not old:
+                return {"ok": False, "error": "old_text is empty — copy the exact passage to change."}
+            if old == new:
+                return {"ok": False, "error": "new_text is the same as old_text."}
+            found = note.content.count(old)
+            if found == 0:
+                return {
+                    "ok": False,
+                    "error": "That passage is not in the note. old_text must match exactly, line breaks "
+                    "included — read the note again.",
+                }
+            if found > 1:
+                return {
+                    "ok": False,
+                    "error": f"That passage appears {found} times. Include more surrounding text so it matches once.",
+                }
+            await version_service.snapshot_now(db, note)
+            updated = await note_service.update_content(
+                db,
+                vault_id,
+                user_id,
+                note.id,
+                content=note.content.replace(old, new, 1),
+                base_updated_at=note.updated_at,
+            )
+            if not updated.success:
+                return {"ok": False, "error": updated.message}
+            return {
+                "ok": True,
+                "id": str(note.id),
+                "title": note.title,
+                "path": note.path,
+                "removed_lines": len(old.splitlines()),
+                "added_lines": len(new.splitlines()),
+            }
+
         if name == "fetch_url":
             try:
                 page = await web_fetch.fetch_page(str(args.get("url", "")))
@@ -266,6 +330,14 @@ def describe(name: str, args: dict[str, Any], result: dict[str, Any]) -> dict[st
         return {"kind": "created", "title": result.get("title", ""), "note_id": result.get("id", "")}
     if name == "append_to_note":
         return {"kind": "updated", "title": result.get("title", ""), "note_id": result.get("id", "")}
+    if name == "edit_note":
+        return {
+            "kind": "edited",
+            "title": result.get("title", ""),
+            "note_id": result.get("id", ""),
+            "removed": result.get("removed_lines", 0),
+            "added": result.get("added_lines", 0),
+        }
     if name == "fetch_url":
         return {
             "kind": "visited",

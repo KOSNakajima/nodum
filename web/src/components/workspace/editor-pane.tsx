@@ -17,6 +17,7 @@ import { VersionHistoryDialog } from "./version-history";
 import { createCollabSession, presenceColor, type CollabSession } from "@/lib/editor/collab";
 import { getAccessToken } from "@/lib/api/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useEditorSelectionStore } from "@/lib/stores/editor-selection-store";
 import { vaultApi } from "@/lib/api/endpoints";
 import { EditorView } from "@codemirror/view";
 
@@ -111,6 +112,7 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
   const mode = useWorkspaceStore((s) => s.editorMode);
   const setMode = useWorkspaceStore((s) => s.setEditorMode);
 
+  const reportSelection = useEditorSelectionStore((s) => s.report);
   const versionsOpen = useWorkspaceStore((s) => s.versionsOpen);
   const setVersionsOpen = useWorkspaceStore((s) => s.setVersionsOpen);
   const editorSettings = useEditorSettings();
@@ -590,6 +592,7 @@ function EditorBody({ vaultId, note, paneIndex }: { vaultId: string; note: Note;
               onViewReady={(v) => {
                 editorViewRef.current = v;
               }}
+              onSelectionChange={(lines) => reportSelection(note.id, lines)}
             />
           )}
           {backlinksInDocument && (

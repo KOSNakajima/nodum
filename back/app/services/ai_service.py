@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai import AIConversation, AICredential, AIMessage
 from app.models.auth import User
+from app.models.vaults import Note
 from app.services import ai_providers, ai_tools
 from app.services.ai_providers import PROVIDERS, ProviderError
 from app.services.service_response import ServiceResponse
@@ -469,6 +470,7 @@ TOOL_STATUS = {
     "append_to_note": "Adding to a note…",
     "list_notes": "Listing notes…",
     "link_notes": "Linking notes…",
+    "edit_note": "Editing a note…",
     "fetch_url": "Opening a web page…",
 }
 
@@ -483,6 +485,35 @@ def _tool_status(call: ai_providers.ToolCall) -> str:
     return TOOL_STATUS.get(call.name, "Working…")
 
 
+async def _attached_context(
+    db: AsyncSession, vault_id: UUID, note_id: UUID | None, selection: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """The `context` record for the user's message: the open note, and the
+    selected lines when there were any. Ownership is the vault check the
+    caller already made; the note must belong to that vault."""
+    if note_id is None:
+        return None
+    note = await db.scalar(select(Note).where(Note.id == note_id, Note.vault_id == vault_id))
+    if note is None:
+        return None
+    record: dict[str, Any] = {"kind": "context", "title": note.title, "note_id": str(note.id)}
+    if selection:
+        record["from_line"] = selection["from_line"]
+        record["to_line"] = selection["to_line"]
+    return record
+
+
+def _selection_prompt(selection: dict[str, Any], attached: dict[str, Any] | None) -> str:
+    where = f' of "{attached["title"]}"' if attached else ""
+    first, last = selection["from_line"], selection["to_line"]
+    lines = f"line {first}" if first == last else f"lines {first}-{last}"
+    return (
+        f"\n\nThe user has selected {lines}{where}. When they say this, here or these lines, "
+        "they mean the selection below. To change it, call edit_note with old_text copied "
+        f"exactly from it.\n<selection>\n{selection.get('text', '')}\n</selection>"
+    )
+
+
 async def chat_with_vault_events(
     db: AsyncSession,
     user_id: UUID,
@@ -491,6 +522,8 @@ async def chat_with_vault_events(
     message: str,
     conversation_id: UUID | None = None,
     context: str = "",
+    note_id: UUID | None = None,
+    selection: dict[str, Any] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """`chat_with_vault` as a stream of events, for the live panel:
 
@@ -519,6 +552,11 @@ async def chat_with_vault_events(
     if await get_owned_vault(db, vault_id, user_id) is None:
         yield {"type": "error", "code": "not_found", "message": "Vault not found."}
         return
+
+    # What the user was looking at, stored on their message so the transcript
+    # shows it ("Lines 12-14 of Note") — the panel cannot otherwise tell
+    # whether the open note, or a selection, went along.
+    attached = await _attached_context(db, vault_id, note_id, selection)
 
     # A new thread is created only once the turn has succeeded: the tools may
     # commit mid-turn (a note written), and a thread flushed before a failing
@@ -558,6 +596,8 @@ async def chat_with_vault_events(
     )
     if context:
         system += f"\n\nThe note the user is looking at:\n{context}"
+    if selection:
+        system += _selection_prompt(selection, attached)
 
     history: list[Any] = [
         (
@@ -572,6 +612,8 @@ async def chat_with_vault_events(
     # What fetch_url may open: links the user wrote, the open note, and
     # whatever the tools return as the turn goes on (see url_is_grounded).
     grounding = [m["content"] for m in messages if m["role"] == "user"] + [context]
+    if selection:
+        grounding.append(str(selection.get("text", "")))
 
     reply = ""
     try:
@@ -649,7 +691,9 @@ async def chat_with_vault_events(
         conversation = AIConversation(user_id=user_id, vault_id=vault_id, title=_title_from(message))
         db.add(conversation)
         await db.flush()
-    db.add(AIMessage(conversation_id=conversation.id, role="user", content=message))
+    db.add(
+        AIMessage(conversation_id=conversation.id, role="user", content=message, actions=[attached] if attached else [])
+    )
     db.add(AIMessage(conversation_id=conversation.id, role="assistant", content=reply, actions=actions))
     # Touch the thread so the history list sorts by real activity. (The tools
     # may have committed mid-turn, which leaves updated_at stale otherwise.)
@@ -674,12 +718,21 @@ async def chat_with_vault(
     message: str,
     conversation_id: UUID | None = None,
     context: str = "",
+    note_id: UUID | None = None,
+    selection: dict[str, Any] | None = None,
 ) -> ServiceResponse[dict[str, Any]]:
     """A chat turn that can search, read and write the vault — the whole
     answer at once. Same loop as the stream; see `chat_with_vault_events`."""
     final: dict[str, Any] | None = None
     async for event in chat_with_vault_events(
-        db, user_id, vault_id, message=message, conversation_id=conversation_id, context=context
+        db,
+        user_id,
+        vault_id,
+        message=message,
+        conversation_id=conversation_id,
+        context=context,
+        note_id=note_id,
+        selection=selection,
     ):
         if event["type"] == "error":
             return ServiceResponse.fail(event.get("code") or "validation_failed", event["message"])
