@@ -244,3 +244,81 @@ async def test_a_thought_is_recorded_only_when_the_model_reasoned(
         assert thoughts == []
     else:
         assert [t["text"] for t in thoughts] == [recorded]
+
+
+async def _stream_chat(client: AsyncClient, account: dict, message: str) -> list:
+    async with client.stream(
+        "POST",
+        f"/api/v1/ai/vaults/{account['vault_id']}/chat/stream",
+        json={"message": message},
+        headers=account["headers"],
+    ) as resp:
+        assert resp.status_code == 200, await resp.aread()
+        return _events((await resp.aread()).decode())
+
+
+def _search_call(n: int) -> ai_providers.Turn:
+    return ai_providers.Turn(
+        text="",
+        tool_calls=[ai_providers.ToolCall(id=f"c{n}", name="search_notes", arguments={"query": f"q{n}"})],
+        raw_message={"role": "assistant", "content": None, "tool_calls": []},
+    )
+
+
+async def test_a_turn_that_runs_out_of_tool_rounds_still_answers(
+    client: AsyncClient, account: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict] = []
+
+    async def fake_stream_turn(**kw):
+        calls.append(kw)
+        if not kw.get("answer_only"):
+            # A model that would keep researching forever.
+            yield _search_call(len(calls))
+            return
+        yield "Here is what I found."
+        yield ai_providers.Turn(text="Here is what I found.", tool_calls=[], raw_message=None)
+
+    monkeypatch.setattr(ai_providers, "stream_turn", fake_stream_turn)
+    events = await _stream_chat(client, account, "research this")
+
+    from app.services import ai_service, ai_tools
+
+    assert len(calls) == ai_tools.MAX_TOOL_ROUNDS + 1
+    assert not any(c.get("answer_only") for c in calls[:-1])
+    assert calls[-1]["answer_only"] is True
+    assert calls[-1]["system"].endswith(ai_service.FINAL_ROUND_NOTE)
+    done = events[-1]
+    assert done["type"] == "done" and done["reply"] == "Here is what I found."
+    assert len([a for a in done["actions"] if a["kind"] == "searched"]) == ai_tools.MAX_TOOL_ROUNDS
+
+
+async def test_a_model_that_calls_tools_in_the_last_round_gets_the_stop_message(
+    client: AsyncClient, account: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = {"n": 0}
+
+    async def fake_stream_turn(**kw):
+        calls["n"] += 1
+        yield _search_call(calls["n"])
+
+    monkeypatch.setattr(ai_providers, "stream_turn", fake_stream_turn)
+    events = await _stream_chat(client, account, "research this")
+    done = events[-1]
+    assert done["type"] == "done" and done["reply"].startswith("I stopped after several steps.")
+
+
+async def test_the_model_is_told_what_the_panel_can_render(
+    client: AsyncClient, account: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services import ai_service
+
+    seen: list[str] = []
+
+    async def fake_stream_turn(**kw):
+        seen.append(kw["system"])
+        yield ai_providers.Turn(text="ok", tool_calls=[], raw_message=None)
+
+    monkeypatch.setattr(ai_providers, "stream_turn", fake_stream_turn)
+    await _stream_chat(client, account, "hello")
+    assert ai_service.REPLY_FORMAT in seen[0]

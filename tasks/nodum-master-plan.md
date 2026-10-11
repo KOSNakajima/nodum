@@ -223,6 +223,36 @@ gitleaks clean → pushed to github.com/vorreix/nodum. Released as v1.0.0.
 
 ## 6. Progress Log
 
+- **2026-10-11 (fork `custom`): the AI chat as an MCP client.** Settings → MCP
+  gains an "MCP servers" section (above "Nodum as an MCP server"): name, URL,
+  optional bearer token → Nodum connects, stores the tool list, every tool on;
+  per-tool switches; reload keeps picks and new tools start off. Chat ⚙ menu
+  switches each server per browser; the request sends `mcp_servers`.
+  - Backend: `mcp_servers` table (fork-only migration `k001` — merge revision
+    needed once upstream adds 0023), `mcp_client` (SDK `Client` over Streamable
+    HTTP via httpx2; `assert_safe_url` before every connect, no redirects, no
+    proxy env; status-only errors), `mcp_connection_service`, `/api/v1/mcp-servers`.
+  - Chat: tools offered as `mcp<N>_<tool>`, ≤5 calls/turn, results capped at
+    12k chars and added to fetch_url grounding (search → visit works). Step
+    `{"kind":"mcp"}` with server badge and the links parsed from the result
+    (Tavily's `Title:`/`URL:` lines). System prompt: outside output is data,
+    and note text stays out of their arguments unless asked.
+  - Tavily: `https://mcp.tavily.com/mcp/`, key as the token (Bearer). Verified
+    reachable from the prod container (401 without a key).
+  - Gates: unit 340, integration 312, `make verify`, ai-chat e2e 11 (the new
+    one connects this instance's own MCP endpoint), mcp + settings e2e.
+  - Follow-ups the same day: tool rounds 4 → 8 plus one last round told to
+    answer (`tool_choice="none"` on OpenAI-compatible models), so research
+    never ends on "I stopped…"; MCP steps show the `query` argument and read
+    titles from JSON results; chat ⚙ is a bare gear; generic form placeholders.
+  - Reply format: "Answer in markdown" replaced by `REPLY_FORMAT`, the reading
+    view's whole vocabulary (GFM, fenced code + mermaid, `$`/`$$` math,
+    callouts, [[links]]) — paired by comment with reading-view.tsx. The chat
+    also turns `\(…\)`/`\[…\]` into dollars (notes do not: `\(` is an escaped
+    paren there). Reading view list markers restored (preflight had removed
+    them). Live gpt-5.4 ×3: code, table, mermaid, `$` math, clickable URLs.
+    Full e2e 283/284 (forum moderation needs a DB on :5432, unrelated).
+
 - **2026-10-10 (fork `custom`): AI chat transcript reads as turns.** Only the
   question is boxed (its context chips inside it); the answer is plain text
   with the reading view's end margins trimmed; tool/thought steps stay a

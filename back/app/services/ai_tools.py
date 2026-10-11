@@ -26,7 +26,10 @@ from app.services.folder_service import ensure_folder_path
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ROUNDS = 4
+#: Rounds in which the model may call tools; one more round follows, without
+#: them, so a turn that runs out still ends with an answer. Enough for
+#: search → open a page or two → search again.
+MAX_TOOL_ROUNDS = 8
 #: Pages one turn may open. Several calls can arrive in a single round, so the
 #: round limit alone does not bound outbound requests.
 MAX_FETCHES_PER_TURN = 5

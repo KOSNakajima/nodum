@@ -203,6 +203,12 @@ body {
   color: var(--ob-text-muted);
 }
 .nodum-reading ul, .nodum-reading ol { padding-left: 1.6em; margin: 0.4em 0; }
+/* Tailwind's preflight strips list markers; reading markdown needs them back. */
+.nodum-reading ul { list-style: disc; }
+.nodum-reading ul ul { list-style: circle; }
+.nodum-reading ul ul ul { list-style: square; }
+.nodum-reading ol { list-style: decimal; }
+.nodum-reading li.task-list-item { list-style: none; }
 .nodum-reading li { margin: 0.15em 0; }
 .nodum-reading li::marker { color: var(--ob-interactive-accent); }
 .nodum-reading input[type="checkbox"] {

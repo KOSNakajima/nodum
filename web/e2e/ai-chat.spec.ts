@@ -388,14 +388,14 @@ test.describe("AI chat panel", () => {
     expect(request(0).body.reasoning_effort).toBeUndefined();
     await expect(page.getByRole("button", { name: /^Thought for/ })).toHaveCount(0);
 
-    // Thinking on at High: the button names the effort, the request goes to
-    // the Responses API with that effort, and waiting reads "Thinking…".
+    // Thinking on at High: the request goes to the Responses API with that
+    // effort, and waiting reads "Thinking…". The button stays a bare gear.
     await page.getByRole("button", { name: "Chat settings" }).click();
     await page.getByRole("switch", { name: "Thinking" }).click();
     await page.getByRole("button", { name: "Effort High" }).click();
     await expect(page.getByRole("switch", { name: "Thinking" })).toHaveAttribute("aria-checked", "true");
     await page.keyboard.press("Escape");
-    await expect(page.getByRole("button", { name: "Chat settings" })).toContainText("High");
+    await expect(page.getByRole("button", { name: "Chat settings" })).toHaveText("");
     await page.getByLabel("Message the assistant").fill("Is 91 prime?");
     await page.getByRole("button", { name: "Send" }).click();
     await expect(page.getByTestId("ai-running")).toContainText("Thinking…");
@@ -475,5 +475,95 @@ test.describe("AI chat panel", () => {
     const second = stubRequests[1] as { body: { messages: { role: string; content: string }[] } };
     expect(second.body.messages[0].content).not.toContain("<selection>");
     expect(second.body.messages[0].content).not.toContain("The note the user is looking at");
+  });
+
+  test("an MCP server connected in Settings lends its tools to the chat", async ({ page }) => {
+    await signupFreshUser(page, "ai-mcp");
+    await configureStubProvider(page, stubUrl);
+    // Nodum is an MCP server too, so the remote server here is this very
+    // instance — reached server-to-server with a Nodum MCP token, the way a
+    // user would connect Tavily with a Tavily key.
+    const remote = await page.evaluate(async () => {
+      const token = (await (await fetch("/api/v1/auth/refresh", { method: "POST" })).json()).data.access_token;
+      const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+      const minted = await (
+        await fetch("/api/v1/mcp-tokens", { method: "POST", headers, body: JSON.stringify({ name: "e2e" }) })
+      ).json();
+      // This origin, not the token screen's endpoint: that one is built from
+      // FRONTEND_BASE_URL, which the e2e stack leaves at its default.
+      return { token: minted.data.token as string, endpoint: `${location.origin}/api/v1/mcp` };
+    });
+    await page.reload();
+    await openAiPanel(page);
+
+    // ⚙ → "Add an MCP server…" lands on Settings → MCP.
+    await page.getByRole("button", { name: "Chat settings" }).click();
+    await page.getByRole("button", { name: "Add an MCP server…" }).click();
+    await page.getByRole("button", { name: "Add MCP server" }).click();
+    await page.getByRole("textbox", { name: "Name", exact: true }).fill("Self");
+    await page.getByRole("textbox", { name: "URL", exact: true }).fill(remote.endpoint);
+    await page.getByRole("textbox", { name: "Token", exact: true }).fill(remote.token);
+    await page.getByRole("button", { name: "Connect" }).click();
+    const card = page.getByTestId("mcp-server");
+    await expect(card).toContainText(/Connected · \d+ tools/, { timeout: 15_000 });
+    await expect(card).not.toContainText(remote.token);
+    await expect(card.getByRole("switch", { name: "Let the chat use list_vaults" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await page.keyboard.press("Escape");
+
+    // The server is on for the chat, and the model can call its tools.
+    await page.getByRole("button", { name: "Chat settings" }).click();
+    await expect(page.getByRole("switch", { name: "Use Self" })).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("Escape");
+
+    stubReplies = [toolCall("mcp1_list_vaults", {}), chatMessage("You have one vault.")];
+    await page.getByLabel("Message the assistant").fill("Which vaults do I have?");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByText("You have one vault.")).toBeVisible({ timeout: 15_000 });
+
+    const steps = page.getByRole("list", { name: "Assistant steps" }).last();
+    await expect(steps).toContainText("Self");
+    await expect(steps).toContainText("list_vaults");
+    const first = stubRequests[0] as { body: { tools: { function: { name: string } }[] } };
+    expect(first.body.tools.map((t) => t.function.name)).toContain("mcp1_list_vaults");
+    // The tool's output went back to the model.
+    const second = stubRequests[1] as { body: { messages: { role: string; content: string }[] } };
+    expect(second.body.messages.some((m) => m.role === "tool" && m.content.includes("My Vault"))).toBe(true);
+
+    // Switched off in ⚙, the next message offers none of its tools.
+    await page.getByRole("button", { name: "Chat settings" }).click();
+    await page.getByRole("switch", { name: "Use Self" }).click();
+    await page.keyboard.press("Escape");
+    stubReplies = [chatMessage("Without tools.")];
+    await page.getByLabel("Message the assistant").fill("And now?");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByText("Without tools.")).toBeVisible({ timeout: 15_000 });
+    const third = stubRequests[2] as { body: { tools: { function: { name: string } }[] } };
+    expect(third.body.tools.map((t) => t.function.name)).not.toContain("mcp1_list_vaults");
+  });
+
+  test("math in LaTeX's own delimiters renders, and lists keep their markers", async ({ page }) => {
+    await signupFreshUser(page, "ai-format");
+    await configureStubProvider(page, stubUrl);
+    await page.reload();
+    await openAiPanel(page);
+
+    // How OpenAI models write by default: \( \) and \[ \], not dollars.
+    stubReplies = [
+      chatMessage(
+        "Inline \\(a^2 + b^2\\) here.\n\n\\[\n391 = 17 \\times 23\n\\]\n\n- first\n- second\n\nCode stays: `\\(x\\)`",
+      ),
+    ];
+    await page.getByLabel("Message the assistant").fill("Show me some math");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.getByText("Code stays:")).toBeVisible({ timeout: 15_000 });
+
+    const answer = page.locator(".nodum-reading").last();
+    await expect(answer.locator(".katex")).toHaveCount(2);
+    await expect(answer.locator(".katex-display")).toHaveCount(1);
+    await expect(answer.locator("code")).toHaveText("\\(x\\)");
+    expect(await answer.locator("li").first().evaluate((el) => getComputedStyle(el).listStyleType)).toBe("disc");
   });
 });

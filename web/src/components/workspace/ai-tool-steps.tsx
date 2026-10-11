@@ -101,6 +101,16 @@ function describe(action: Step, onOpenNote: (id: string, title: string) => void)
     }
     case "thought":
       return { verb: `Thought for ${action.seconds}s`, target: "", detail: action.text || undefined };
+    case "mcp":
+      return {
+        verb: action.tool,
+        target: action.detail ? `"${action.detail}"` : "",
+        summary: action.count
+          ? plural(action.count, "result")
+          : action.chars
+            ? plural(action.chars, "char")
+            : "No output",
+      };
     case "failed":
       return {
         verb: FAILED_VERB[action.tool] ?? action.tool,
@@ -176,7 +186,7 @@ function Step({ line }: { line: Line }) {
         aria-hidden
         className={cn(
           "mt-[0.45em] size-1.5 shrink-0 rounded-full",
-          line.failed ? "bg-red-400" : "bg-green-500",
+          line.failed ? "bg-red-400" : "bg-ob-accent",
         )}
       />
       <div className="min-w-0 flex-1">
@@ -208,6 +218,63 @@ function Step({ line }: { line: Line }) {
   );
 }
 
+/**
+ * A call to a connected MCP server's tool — badged with the server, since it
+ * ran outside Nodum — whose result line opens to the links it returned.
+ */
+function McpStep({ action, line }: { action: Extract<AIAction, { kind: "mcp" }>; line: Line }) {
+  const [open, setOpen] = useState(false);
+  const links = action.links.filter((l) => /^https?:\/\//i.test(l.url));
+  return (
+    <li className="flex items-start gap-2">
+      <span aria-hidden className="mt-[0.45em] size-1.5 shrink-0 rounded-full bg-ob-accent" />
+      <div className="min-w-0 flex-1">
+        <div className={HEAD}>
+          <span className="shrink-0 rounded-full bg-ob-accent/15 px-1.5 text-[10.5px] text-ob-accent">
+            {action.server}
+          </span>
+          <span className="shrink-0 font-semibold text-ob-text">{line.verb}</span>
+          <span className="truncate text-ob-accent">{line.target}</span>
+        </div>
+        {links.length > 0 ? (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+            className="text-left text-ob-faint hover:text-ob-text"
+          >
+            <span aria-hidden>└ </span>
+            {line.summary}
+          </button>
+        ) : (
+          <p className="truncate text-ob-faint">
+            <span aria-hidden>└ </span>
+            {line.summary}
+          </p>
+        )}
+        {open && (
+          <ul className="mt-1 space-y-0.5 border-l border-ob-border pl-2">
+            {links.map((link) => (
+              <li key={link.url} className="truncate">
+                <a
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={link.url}
+                  className="text-ob-muted hover:underline"
+                >
+                  {link.title || shortUrl(link.url)}
+                </a>
+                {link.title && <span className="text-ob-faint"> · {shortUrl(link.url)}</span>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </li>
+  );
+}
+
 export function AIToolSteps({
   actions,
   running,
@@ -227,6 +294,8 @@ export function AIToolSteps({
       {steps.map((action, i) =>
         action.kind === "thought" ? (
           <ThoughtStep key={i} line={describe(action, onOpenNote)} />
+        ) : action.kind === "mcp" ? (
+          <McpStep key={i} action={action} line={describe(action, onOpenNote)} />
         ) : (
           <Step key={i} line={describe(action, onOpenNote)} />
         ),

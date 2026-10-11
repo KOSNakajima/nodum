@@ -165,6 +165,8 @@ def _provider_error(provider: str, exc: BaseException) -> ProviderError:
 #: included; Claude's and Gemini's thinking controls are a constructor argument
 #: away now, but untested against real keys, so not offered yet.
 REASONING_PROVIDERS = frozenset({"openai"})
+#: Providers whose LangChain binding takes `tool_choice="none"` (ChatOpenAI).
+NO_CALLS_PROVIDERS = frozenset({"openai", "qwen"})
 #: Reasoning tokens count against the output cap, so a reply with reasoning on
 #: needs far more room than 2048 or it is all thinking and no answer. Billing
 #: follows what is used, not this ceiling.
@@ -383,6 +385,7 @@ async def stream_turn(
     base_url: str | None = None,
     max_tokens: int = 2048,
     reasoning_effort: str | None = None,
+    answer_only: bool = False,
 ) -> AsyncIterator[str | Reasoning | Turn]:
     """One round with tools available, streamed: yields text deltas (str) and
     reasoning-summary pieces (Reasoning) as they arrive and, last, the Turn.
@@ -391,6 +394,11 @@ async def stream_turn(
     caller (`user_message`, `Turn.raw_message`, `tool_result_message`).
     LangChain assembles streamed tool-call fragments, so a turn that ends in
     tool calls yields its Turn with them parsed and the caller runs them.
+
+    `answer_only` is the last round of a turn: the tools stay declared (the
+    history holds calls to them, which Anthropic rejects without them) but
+    OpenAI-compatible models are told not to call any. The others follow the
+    caller's instruction, and the caller handles one that does not.
     """
     merged: AIMessageChunk | None = None
     async with _http_client() as http:
@@ -403,7 +411,8 @@ async def stream_turn(
             reasoning_effort=reasoning_effort,
             http_client=http,
         )
-        runnable = llm.bind_tools(_tools(tools)) if tools else llm
+        no_calls = {"tool_choice": "none"} if answer_only and provider in NO_CALLS_PROVIDERS else {}
+        runnable = llm.bind_tools(_tools(tools), **no_calls) if tools else llm
         try:
             async for chunk in runnable.astream(_history(system, messages)):
                 if not isinstance(chunk, AIMessageChunk):

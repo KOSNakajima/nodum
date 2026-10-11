@@ -19,6 +19,8 @@ import type {
   ApiKey,
   ApiKeyList,
   ApiKeyWithToken,
+  McpServer,
+  McpServerUpdate,
   McpToken,
   McpTokenList,
   Note,
@@ -370,6 +372,17 @@ export const mcpApi = {
   /** The token is in THIS response only — show it once. */
   createToken: (name: string) => apiJson<McpToken & { token: string }>("/mcp-tokens", "POST", { name }),
   revokeToken: (id: string) => apiJson<McpToken>(`/mcp-tokens/${id}`, "DELETE"),
+};
+
+// ── MCP servers (the AI chat as an MCP client) ───────────────────────────────
+
+export const mcpServersApi = {
+  list: () => api<McpServer[]>("/mcp-servers"),
+  /** Connects to the server and reads its tools before saving. */
+  create: (body: { name: string; url: string; token?: string }) =>
+    apiJson<McpServer>("/mcp-servers", "POST", body),
+  update: (id: string, body: McpServerUpdate) => apiJson<McpServer>(`/mcp-servers/${id}`, "PATCH", body),
+  remove: (id: string) => apiJson<{ id: string }>(`/mcp-servers/${id}`, "DELETE"),
 };
 
 // ── API keys (the public REST API's credential) ──────────────────────────────

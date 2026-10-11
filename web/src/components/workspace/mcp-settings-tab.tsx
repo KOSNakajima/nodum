@@ -1,7 +1,9 @@
 "use client";
 
 /**
- * Settings → MCP. Nodum as a tool server for any MCP client.
+ * Settings → MCP. Both directions: on top, the MCP servers the AI chat calls
+ * (Nodum as a client, `McpServersSection`); below, Nodum as a tool server
+ * for any MCP client.
  *
  * A token is shown once, at the moment it is minted, and never again — the
  * list below only ever carries its name, its last four characters and when it
@@ -21,6 +23,8 @@ import { DOCS_URL } from "@/lib/app-meta";
 import { toastError, useToastStore } from "@/lib/stores/toast-store";
 import { cn } from "@/lib/utils";
 import { isComposing } from "@/lib/ime";
+
+import { McpServersSection } from "./mcp-servers-section";
 
 const TOKEN_PLACEHOLDER = "<your token>";
 
@@ -122,9 +126,11 @@ export function McpSettingsTab() {
 
   return (
     <section className="space-y-5">
-      <div className="space-y-2">
+      <McpServersSection />
+
+      <div className="space-y-2 border-t border-ob-border pt-5">
         <h3 className="text-[11px] font-medium tracking-wide text-ob-faint uppercase">
-          MCP — use Nodum from an AI client
+          Nodum as an MCP server — use Nodum from an AI client
         </h3>
         <p className="text-[12px] text-ob-faint">
           Nodum is an MCP server. Point Claude Code, Claude Desktop, Cursor or any other MCP client at

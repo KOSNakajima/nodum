@@ -65,6 +65,8 @@ class VaultChatRequest(BaseModel):
     selection: ChatSelection | None = None
     # Thinking on, at this effort; omitted = off (the model's own default).
     reasoning_effort: Literal["low", "medium", "high", "xhigh"] | None = None
+    # The connected MCP servers whose tools this turn may use; omitted = all.
+    mcp_servers: list[UUID] | None = Field(default=None, max_length=20)
 
 
 def _selection(body: VaultChatRequest) -> dict[str, Any] | None:
@@ -172,6 +174,7 @@ async def chat_in_vault(
             note_id=body.note_id,
             selection=_selection(body),
             reasoning_effort=body.reasoning_effort,
+            mcp_servers=body.mcp_servers,
         )
     ).unwrap()
     return {"data": data}
@@ -204,6 +207,7 @@ async def chat_in_vault_stream(
             note_id=body.note_id,
             selection=_selection(body),
             reasoning_effort=body.reasoning_effort,
+            mcp_servers=body.mcp_servers,
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n".encode()
 

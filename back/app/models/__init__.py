@@ -4,7 +4,7 @@ Alembic's env.py does ``from app.models import *`` to autogenerate against
 the full schema. Add new model modules here as features land.
 """
 
-from app.models.ai import AIConversation, AICredential, AIMessage
+from app.models.ai import AIConversation, AICredential, AIMessage, MCPServer
 from app.models.attachments import Attachment
 from app.models.auth import ApiToken, EmailVerification, OAuthConnection, Session, User
 from app.models.base import Base
@@ -42,6 +42,7 @@ __all__ = [
     "ExternalObject",
     "Folder",
     "Link",
+    "MCPServer",
     "Note",
     "NoteAlias",
     "NoteTag",

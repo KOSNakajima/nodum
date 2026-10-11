@@ -266,7 +266,17 @@ export type AIAction =
   | { kind: "thought"; seconds: number; text: string }
   | { kind: "searched"; query: string; count: number }
   | { kind: "visited"; title: string; url: string; chars?: number; truncated?: boolean }
-  | { kind: "failed"; tool: string; detail: string; error: string };
+  | { kind: "failed"; tool: string; detail: string; error: string }
+  /** A tool of a connected MCP server (Tavily…): what it was asked, the links it returned. */
+  | {
+      kind: "mcp";
+      server: string;
+      tool: string;
+      detail: string;
+      count: number;
+      links: { title: string; url: string }[];
+      chars: number;
+    };
 
 export interface AIChatReply {
   reply: string;
@@ -290,6 +300,8 @@ export interface AIVaultChatRequest {
   selection?: { from_line: number; to_line: number; text: string };
   /** Thinking on, at this effort; omitted = off (the model's own default). */
   reasoning_effort?: "low" | "medium" | "high" | "xhigh";
+  /** The connected MCP servers this turn may use; omitted = all of them. */
+  mcp_servers?: string[];
 }
 
 /** One server-sent event of a streamed vault chat turn. */
@@ -340,6 +352,34 @@ export interface McpTokenList {
   tokens: McpToken[];
   /** The URL an MCP client should be pointed at. */
   endpoint: string;
+}
+
+// ── MCP servers (remote tool servers the AI chat calls) ──────────────────────
+
+export interface McpServerTool {
+  name: string;
+  description: string;
+}
+
+/** A connected server, minus its token (only a hint of it). */
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  token_hint: string;
+  tools: McpServerTool[];
+  enabled_tools: string[];
+  updated_at: string | null;
+}
+
+export interface McpServerUpdate {
+  name?: string;
+  url?: string;
+  /** Omitted keeps the stored token; "" removes it. */
+  token?: string;
+  enabled_tools?: string[];
+  /** Reconnect and re-read the tool list. */
+  refresh?: boolean;
 }
 
 // ── API keys ─────────────────────────────────────────────────────────────────

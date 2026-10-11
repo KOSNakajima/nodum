@@ -30,7 +30,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { aiApi, noteApi } from "@/lib/api/endpoints";
+import { aiApi, mcpServersApi, noteApi } from "@/lib/api/endpoints";
 import type { AIAction, AIConversationMessage, Note } from "@/lib/api/types";
 import { useEditorSelectionStore, type EditorSelection } from "@/lib/stores/editor-selection-store";
 import { useAiChatSettingsStore, type ReasoningEffort } from "@/lib/stores/ai-chat-settings-store";
@@ -39,6 +39,7 @@ import { AIToolSteps, ContextChip } from "./ai-tool-steps";
 import { useWorkspaceStore } from "@/lib/stores/workspace-store";
 import { toastError } from "@/lib/stores/toast-store";
 import { isComposing } from "@/lib/ime";
+import { latexDelimitersToDollars } from "@/lib/latex-delimiters";
 
 const CONTEXT_CHARS = 4_000;
 /** The API's cap on selected text. */
@@ -63,6 +64,8 @@ interface Outgoing {
   attach: Attachment | null;
   /** Thinking on for this message, at this effort; undefined = off. */
   reasoning?: ReasoningEffort;
+  /** The connected MCP servers this message may use. */
+  mcp: string[];
 }
 
 /** The `context` record the server stores on the user's message — built here
@@ -158,10 +161,21 @@ export function AiChatPane({
       : null;
   const thinking = useAiChatSettingsStore((s) => s.thinking);
   const effort = useAiChatSettingsStore((s) => s.effort);
+  // Connected MCP servers (Settings → MCP), each on unless switched off in ⚙.
+  // Until the list loads none is sent, so a server switched off is never
+  // used by a message sent in the meantime.
+  const { data: mcpServers } = useQuery({
+    queryKey: ["mcp-servers"],
+    queryFn: mcpServersApi.list,
+    enabled: Boolean(status?.configured),
+  });
+  const mcpOff = useAiChatSettingsStore((s) => s.mcpOff);
+  const mcpOn = (mcpServers ?? []).filter((s) => !mcpOff.includes(s.id) && s.enabled_tools.length > 0);
   const outgoing = (text: string): Outgoing => ({
     text,
     attach: attachment,
     reasoning: status?.reasoning_supported && thinking ? effort : undefined,
+    mcp: mcpOn.map((s) => s.id),
   });
 
   const configured = Boolean(status?.configured);
@@ -198,7 +212,7 @@ export function AiChatPane({
   const [live, setLive] = useState<Live>(idle);
 
   const send = useMutation({
-    mutationFn: async ({ text, attach, reasoning }: Outgoing) => {
+    mutationFn: async ({ text, attach, reasoning, mcp }: Outgoing) => {
       // The open note goes along as context, so "summarise this" works —
       // unless its chip was dismissed.
       const open = attach ? queryClient.getQueryData<Note>(["note", vaultId, attach.noteId]) : undefined;
@@ -211,6 +225,7 @@ export function AiChatPane({
           context,
           note_id: attach?.noteId,
           reasoning_effort: reasoning,
+          mcp_servers: mcp,
           selection: attach?.lines
             ? {
                 from_line: attach.lines.fromLine,
@@ -436,7 +451,7 @@ export function AiChatPane({
               <div className={ANSWER} style={ANSWER_FONT}>
                 <span className="sr-only">Assistant:</span>
                 <ReadingView
-                  content={message.content}
+                  content={latexDelimitersToDollars(message.content)}
                   vaultId={vaultId}
                   onNavigate={() => undefined}
                 />
@@ -455,7 +470,11 @@ export function AiChatPane({
             />
             {live.text && (
               <div className={ANSWER} style={ANSWER_FONT}>
-                <ReadingView content={live.text} vaultId={vaultId} onNavigate={() => undefined} />
+                <ReadingView
+                  content={latexDelimitersToDollars(live.text)}
+                  vaultId={vaultId}
+                  onNavigate={() => undefined}
+                />
               </div>
             )}
           </div>
@@ -499,6 +518,8 @@ export function AiChatPane({
             model={status?.active_model ?? ""}
             reasoningSupported={Boolean(status?.reasoning_supported)}
             onOpenModelSettings={() => openSettings("AI")}
+            mcpServers={mcpServers ?? []}
+            onOpenMcpSettings={() => openSettings("MCP")}
           />
           {attachment && contextKey && (
             <ContextChip

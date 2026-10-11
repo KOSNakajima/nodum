@@ -359,3 +359,25 @@ async def test_a_private_base_url_is_refused_before_any_request(monkeypatch: pyt
             base_url="http://127.0.0.1:9/v1",
         )
     assert seen == []
+
+
+@pytest.mark.parametrize("answer_only", [False, True])
+async def test_the_last_round_tells_openai_models_not_to_call_tools(
+    monkeypatch: pytest.MonkeyPatch, answer_only: bool
+) -> None:
+    seen = _serve(
+        monkeypatch, _stream(_sse(['{"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}', "[DONE]"]))
+    )
+    await _collect(
+        provider="openai",
+        api_key=FAKE_KEY,
+        model="m",
+        messages=[ai_providers.user_message("openai", "hi")],
+        system="s",
+        tools=TOOLS,
+        answer_only=answer_only,
+    )
+    sent = json.loads(seen[0].content)
+    # The tools stay declared either way: the history may hold calls to them.
+    assert [t["function"]["name"] for t in sent["tools"]] == ["search_notes"]
+    assert sent.get("tool_choice") == ("none" if answer_only else None)

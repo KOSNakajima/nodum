@@ -20,6 +20,7 @@ from app.api.v1 import (
     folders,
     integrations,
     links,
+    mcp_servers,
     mcp_tokens,
     notes,
     publish,
@@ -52,5 +53,6 @@ api_router.include_router(publish.site_router, prefix="/vaults/{vault_id}", tags
 api_router.include_router(canvases.router, prefix="/vaults/{vault_id}/canvases", tags=["Canvases"])
 api_router.include_router(ai.router, prefix="/ai", tags=["AI"])
 api_router.include_router(mcp_tokens.router, prefix="/mcp-tokens", tags=["MCP"])
+api_router.include_router(mcp_servers.router, prefix="/mcp-servers", tags=["MCP"])
 api_router.include_router(api_keys.router, prefix="/api-keys", tags=["API keys"])
 api_router.include_router(community.router, prefix="/community", tags=["Community"])

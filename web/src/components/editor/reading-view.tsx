@@ -65,6 +65,9 @@ export function ReadingView({ content, vaultId, onNavigate, depth = 0 }: Reading
 
   return (
     <div className="nodum-reading">
+      {/* What renders here is what the AI is told it may write
+          (REPLY_FORMAT in back/app/services/ai_service.py) — change both
+          together. */}
       <ReactMarkdown
         remarkPlugins={[remarkFrontmatter, remarkGfm, remarkMath, remarkCallouts, remarkInlineHtml]}
         rehypePlugins={[rehypeKatex]}

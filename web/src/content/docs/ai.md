@@ -20,6 +20,12 @@ Open the sparkles panel in the right sidebar and ask. The reply is written as it
 
 Chats are saved per vault: the clock icon lists them, `+` starts a new one, and a reload brings back the one you were in.
 
+## MCP servers — tools from outside
+
+The chat can also call tools on remote MCP servers you connect — web search with [Tavily](https://www.tavily.com/), for example. Settings → MCP → **MCP servers** → *Add MCP server*: a name, the server's URL (Tavily's is `https://mcp.tavily.com/mcp/`) and, if it needs one, a token (your Tavily API key). Nodum connects straight away and lists the server's tools; switch off any you do not want the chat to use. A tool the server adds later starts off.
+
+In the chat, each server is on unless you switch it off in the ⚙ menu. Its calls show as steps badged with the server's name, and a search's step opens to the links it found. The token is stored encrypted and never sent back to your browser; the calls run from Nodum's server. What the assistant sends a server leaves Nodum, so switch a server off for chats that should stay inside your vault.
+
 ## Not set up yet
 
 Opening the panel without a key explains what is missing and takes you to Settings → AI.
