@@ -260,13 +260,21 @@ Query, and all API access behind `web/src/lib/api/`.
   <tr>
     <td align="center" valign="top" width="170">
       <a href="https://github.com/maqboolthoufeeq">
-        <img src="https://github.com/maqboolthoufeeq.png?size=200" width="96" height="96" alt="Maqbool Thoufeeq T" /><br />
-        <sub><b>Maqbool Thoufeeq T</b></sub>
+        <img src="https://github.com/maqboolthoufeeq.png?size=200" width="96" height="96" alt="Maqbool Thoufeeq Tharayil" /><br />
+        <sub><b>Maqbool Thoufeeq Tharayil</b></sub>
       </a>
       <br />
       <sub>Creator &amp; maintainer</sub>
       <br />
       <sub><a href="https://github.com/maqboolthoufeeq">@maqboolthoufeeq</a></sub>
+    </td>
+    <td align="center" valign="top" width="170">
+      <a href="https://github.com/KOSNakajima">
+        <img src="https://github.com/KOSNakajima.png?size=200" width="96" height="96" alt="KOSNakajima" /><br />
+        <sub><b>KOSNakajima</b></sub>
+      </a>
+      <br />
+      <sub><a href="https://github.com/KOSNakajima">@KOSNakajima</a></sub>
     </td>
     <td align="center" valign="top" width="170">
       <a href="https://github.com/ziuus">
